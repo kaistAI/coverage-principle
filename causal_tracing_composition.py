@@ -28,7 +28,7 @@ def main():
 
     directory = os.path.join(model_dir, "{}_{}_{}".format(dataset, args.wd, args.num_layer))
 
-    device = torch.device('cuda:5')
+    device = torch.device('cuda:0')
 
     all_atomic = set()     # (h,r,t)
     atomic_dict = dict()   # (h,r) -> t
