@@ -22,7 +22,7 @@ setup(
     ],
     python_requires=">=3.6",
     install_requires=[
-        "numpy",
+        "numpy<2.0",
         "requests",
         "tqdm>=4.47.0",
         "regex",
