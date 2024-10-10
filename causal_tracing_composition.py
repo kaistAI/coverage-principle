@@ -294,7 +294,7 @@ def main():
         results.append(full_list)
 
     with open(args.save_path, "w", encoding='utf-8') as f:
-        json.dump(results, f)
+        json.dump(results, f, indent=4)
 
 
 if __name__ == '__main__':
