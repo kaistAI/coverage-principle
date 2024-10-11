@@ -95,7 +95,7 @@ def main():
     all_checkpoints = [checkpoint for checkpoint in os.listdir(directory) if checkpoint.startswith("checkpoint")]
     all_checkpoints.sort(key=lambda var: int(var.split("-")[1]))
 
-    results = []
+    results = {}
 
     np.random.seed(0)
     split = 'train_inferred'
@@ -290,8 +290,8 @@ def main():
 
             # print(res_dict)
             full_list.append(res_dict)
-
-        results.append(full_list)
+        
+        results[checkpoint] = full_list
 
     with open(args.save_path, "w", encoding='utf-8') as f:
         json.dump(results, f, indent=4)
