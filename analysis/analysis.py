@@ -9,6 +9,32 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import cosine
+from scipy.linalg import svd
+
+def perform_ssa(vector_group, n_components=20):
+    # Ensure we have a 2D matrix
+    matrix = np.array(vector_group)
+    if matrix.ndim == 1:
+        matrix = matrix.reshape(1, -1)
+    
+    # Perform SVD
+    U, s, Vt = svd(matrix, full_matrices=False)
+    
+    # Return the singular values (spectrum)
+    return s[:n_components]
+
+def sample_and_perform_ssa(vector_groups, sample_size=1000, n_components=20):
+    ssa_results = {}
+    for key, vectors in vector_groups.items():
+        if len(vectors) >= sample_size:
+            sampled_vectors = vectors[np.random.choice(len(vectors), sample_size, replace=False)]
+        else:
+            sampled_vectors = vectors[np.random.choice(len(vectors), sample_size, replace=True)]
+        
+        spectrum = perform_ssa(sampled_vectors, n_components)
+        ssa_results[str(key)] = spectrum.tolist()
+    
+    return ssa_results
 
 def perform_pca_and_tsne_visualize(vector_groups, save_dir):
     for (layer, position) in set((l, p) for l, p, _, _ in vector_groups.keys()):
@@ -133,6 +159,25 @@ def main():
     # Convert vector_groups values to numpy arrays
     for key in vector_groups:
         vector_groups[key] = np.array(vector_groups[key])
+    
+    # Perform SSA
+    ssa_results = sample_and_perform_ssa(vector_groups, sample_size=1000, n_components=20)
+    logging.info(f"Number of SSA results: {len(ssa_results)}")
+
+    # Optionally, create and save plots of the singular value spectra
+    ssa_plot_dir = os.path.join(args.save_dir, 'ssa_plots')
+    os.makedirs(ssa_plot_dir, exist_ok=True)
+    for key, spectrum in ssa_results.items():
+        plt.figure(figsize=(10, 6))
+        plt.plot(range(1, len(spectrum) + 1), spectrum, 'bo-')
+        plt.xlabel('Component')
+        plt.ylabel('Singular Value')
+        plt.title(f'Singular Spectrum for {key}')
+        plt.yscale('log')
+        save_path = os.path.join(ssa_plot_dir, f'ssa_spectrum_{key.replace(", ", "_")}.png')
+        plt.savefig(save_path)
+        plt.close()
+        logging.info(f"SSA spectrum plot saved to {save_path}")
     
     # Perform PCA and t-SNE visualizations
     vis_save_dir = os.path.join(args.save_dir, 'visualizations')
