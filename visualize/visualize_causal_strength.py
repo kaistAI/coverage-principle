@@ -6,15 +6,12 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 
 def _visualize_causal_strength(causal_strength, checkpoint_name, args):
-    organized_causal_strength = [
-        [causal_strength['h_1'], causal_strength['r1_1'], causal_strength['r2_1']],
-        [causal_strength['h_2'], causal_strength['r1_2'], causal_strength['r2_2']],
-        [causal_strength['h_3'], causal_strength['r1_3'], causal_strength['r2_3']],
-        [causal_strength['h_4'], causal_strength['r1_4'], causal_strength['r2_4']],
-        [causal_strength['h_5'], causal_strength['r1_5'], causal_strength['r2_5']],
-        [causal_strength['h_6'], causal_strength['r1_6'], causal_strength['r2_6']],
-        [causal_strength['h_7'], causal_strength['r1_7'], causal_strength['r2_7']]
-    ]
+    if args.task == "composition":
+        label = ["h", "r1", "r2"]
+    else:
+        label = ["a", "e1", "e2"]
+    
+    organized_causal_strength = [[causal_strength[f"{label[0]}_{layer_num}"], causal_strength[f"{label[1]}_{layer_num}"], causal_strength[f"{label[2]}_{layer_num}"]] for layer_num in range(1, 8)]
 
     colors = ["y", "w", "g"]  # Yellow, White, Green
     cmap = LinearSegmentedColormap.from_list('custom_cmap', colors)
@@ -23,7 +20,7 @@ def _visualize_causal_strength(causal_strength, checkpoint_name, args):
     plt.figure(figsize=(4, 7))
     ax = sns.heatmap(organized_causal_strength, annot=False, cmap=cmap, cbar=True, vmin=-1, vmax=1, 
                     yticklabels=['Layer 1', 'Layer 2', 'Layer 3', 'Layer 4', 'Layer 5', 'Layer 6', 'Layer 7'], 
-                    xticklabels=['h', 'r1', 'r2'])
+                    xticklabels=label)
 
     # Adding a bold outside border
     for _, spine in ax.spines.items():
@@ -42,17 +39,16 @@ def _visualize_causal_strength(causal_strength, checkpoint_name, args):
     cbar.outline.set_linewidth(1.5)  # Set the linewidth of the color bar border
     cbar.outline.set_edgecolor('black')  # Set the color of the color bar border
 
-    # Show the heatmap
-    os.makedirs(os.path.join(os.path.dirname(args.json_path), "composition"), exist_ok=True)
-    plt.savefig(os.path.join(os.path.dirname(args.json_path), "composition", f"{checkpoint_name}.png"), dpi=300, bbox_inches='tight')
+    # Save the heatmap
+    os.makedirs(os.path.join(os.path.dirname(args.json_path), os.path.splitext(os.path.basename(args.json_path))[0]), exist_ok=True)
+    plt.savefig(os.path.join(os.path.dirname(args.json_path), os.path.splitext(os.path.basename(args.json_path))[0], f"{checkpoint_name}.png"), dpi=300, bbox_inches='tight')
 
-def visualize_causal_strength_composition(args):
+def visualize_causal_strength(args):
     
     with open(args.json_path, "r") as f:
         raw_datas = json.load(f)
         
     # min & max checkpoint steps
-    
     all_checkpoints = [key for key in raw_datas.keys()]
     all_checkpoints.sort(key=lambda var: int(var.split("-")[1]))
     min_checkpoint_step = all_checkpoints[0]
@@ -68,19 +64,36 @@ def visualize_causal_strength_composition(args):
         causal_strength = {}
 
         for key in raw_data[0].keys():
+            # Every keys will have MMR except "rank_before" key
             if key == "rank_before":
                 continue
             mean_reciprocal_rank[key] = []
-            if "b_rank_pos1" in key or "r2_rank_pos2" in key:
+            # This keys only used in MMR not in Causal Strength
+            if ((args.task == "composition" 
+                 and any((k in key for k in ["b_rank_pos1", "r2_rank_pos2"])))
+            or (args.task == "comparison" 
+                and any(k in key for k in ["val1_rank_pos2", "val2_rank_pos4", "label0_rank_pos0", 
+                                           "label1_rank_pos0", "label2_rank_pos0"]))
+            ):
                 continue
             causal_strength[key] = 0
+            
+        if args.task == "composition":
+            all_keys = ["b_rank_pos1_", "r2_rank_pos2_", "h_", "r1_", "r2_"]
+            causal_strength_keys = ["h_", "r1_", "r2_"]
+        elif args.task == "comparison":
+            all_keys = ["val1_rank_pos2_", "val2_rank_pos4_", "label0_rank_pos0_", 
+                        "label1_rank_pos0_", "label2_rank_pos0_", "e1_", "e2_", "a_"]
+            causal_strength_keys = ["e1_", "e2_", "a_"]
+        else:
+            raise NotImplementedError
         
         for result in raw_data:
             original_rank = result["rank_before"]
             for layer_num in range(1, 8):
-                for intervention in ["b_rank_pos1_", "r2_rank_pos2_", "h_", "r1_", "r2_"]:
+                for intervention in all_keys:
                     key = intervention + str(layer_num)
-                    if intervention in ["h_", "r1_", "r2_"]:
+                    if intervention in causal_strength_keys:
                         if result[key] != original_rank:
                             causal_strength[key] += 1
                     mean_reciprocal_rank[key].append(1 / (1 + result[key]))
@@ -100,17 +113,14 @@ def visualize_causal_strength_composition(args):
     for key in max_checkpoint_causal_strength.keys():
         difference_causal_strength[key] = max_checkpoint_causal_strength[key] - min_checkpoint_causal_strength[key]
     _visualize_causal_strength(difference_causal_strength, f"{max_checkpoint_step}-{min_checkpoint_step}", args)
-    
-
-def visualize_causal_strength_comparison(raw_data):
-    raise NotImplementedError
 
 
 def main(args):
-    if os.path.splitext(os.path.basename(args.json_path))[0] == "composition":
-        visualize_causal_strength_composition(args)
+    if "composition" in os.path.splitext(os.path.basename(args.json_path))[0]:
+        args.task = "composition"
     else:
-        visualize_causal_strength_comparison(args)
+        args.task = "comparison"
+    visualize_causal_strength(args)
 
 
 if __name__=="__main__":

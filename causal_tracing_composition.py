@@ -24,6 +24,10 @@ def main():
     parser.add_argument("--wd", default=0.1, type=float, help="weight decay being used")
     
     args = parser.parse_args()
+    
+    # Sanity check for composition & comparison
+    assert "comparison" not in args.dataset
+    
     dataset, model_dir = args.dataset, args.model_dir
 
     directory = os.path.join(model_dir, "{}_{}_{}".format(dataset, args.wd, args.num_layer))
@@ -136,9 +140,16 @@ def main():
                     attention_mask=decoder_attention_mask,
                     output_hidden_states=True
                 )
-            all_hidden_states = outputs['hidden_states']
+            all_hidden_states = outputs['hidden_states'] 
 
+            # Original ver.
             rank_before = return_rank(all_hidden_states[target_layer][0, :, :], word_embedding, tokenizer("<"+t+">")['input_ids'][0])[-1]
+
+            # Why they didn't apply ln_f layer?
+            # with torch.no_grad():
+            #         temp = model.transformer.ln_f(all_hidden_states[target_layer])
+
+            # rank_before = return_rank(temp[0, :, :], word_embedding, tokenizer("<"+t+">")['input_ids'][0])[-1]
             res_dict['rank_before'] = rank_before
 
             # MRRs

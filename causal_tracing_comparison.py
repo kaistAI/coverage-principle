@@ -24,6 +24,10 @@ def main():
     parser.add_argument("--wd", default=0.1, type=float, help="weight decay being used")
 
     args = parser.parse_args()
+    
+    # Sanity check for comparison & composition
+    assert "composition" not in args.dataset
+    
     dataset, model_dir = args.dataset, args.model_dir
 
     directory = os.path.join(model_dir, "{}_{}_{}".format(dataset, args.wd, args.num_layer))
