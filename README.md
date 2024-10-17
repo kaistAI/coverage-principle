@@ -100,6 +100,12 @@ python causal_tracing_{comparison/composition}.py \
     --num_layer <number_layer_of_model> \
     --wd <weight_decay_used>
 ```
+#### example
+```bash
+# example
+python causal_tracing_{comparison/composition}.py --dataset composition.2000.200.9.0 --model_dir <dir_path> --save_path <save_dir_path> --num_layer 8 --wd 0.1
+```
+- this will load <dir_path>/{comparison/composition}.2000.200.9.0_0.1_8 model checkpoints, and save the all checkpoints result in <save_dir_path>/{comparison/composition}-2000.200.9.0_0.1_8.json file
 
 ### Citation
 ```
