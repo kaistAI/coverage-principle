@@ -4,3 +4,5 @@ __pycache__/
 runs/
 cache_dir/
 LLM/
+
+tracing/*/statistics/

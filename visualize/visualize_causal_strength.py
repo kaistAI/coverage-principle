@@ -4,44 +4,142 @@ import os
 import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
+import numpy as np
+from collections import Counter
 
 def _visualize_causal_strength(causal_strength, checkpoint_name, args):
     if args.task == "composition":
         label = ["h", "r1", "r2"]
     else:
         label = ["a", "e1", "e2"]
-    
-    organized_causal_strength = [[causal_strength[f"{label[0]}_{layer_num}"], causal_strength[f"{label[1]}_{layer_num}"], causal_strength[f"{label[2]}_{layer_num}"]] for layer_num in range(1, 8)]
+        
+    if args.soft_ver:
+        organized_causal_strength = [[[0, 0, 0] for _ in range(1, 8)], [[0, 0, 0] for _ in range(1, 8)]]    # First is for mean value, second is for median value
+        # Save each entities real value statistics
+        for i in range(1, 8):
+            for j, intervention in enumerate(label):
+                plt.figure(figsize=(20,10))
+                key = intervention + "_" + str(i)
+            
+                plt.hist(causal_strength[key], bins=range(min(causal_strength[key]), max(causal_strength[key]) + 2), edgecolor='black')
+                plt.title(f"{key} change statistics")
+                plt.xlabel('Value')
+                plt.ylabel('Count')
+                
+                # Calculate the median index and add a vertical red line
+                median_value = np.median(causal_strength[key])
+                mean_value = np.mean(causal_strength[key])
+                organized_causal_strength[0][i-1][j] = mean_value
+                organized_causal_strength[1][i-1][j] = median_value
+                plt.axvline(x=median_value, color='red', linestyle='--', label='Median')
+                std_dev = np.std(causal_strength[key])
+                
+                plt.grid(True)
+                # Add median and standard deviation text
+                plt.text(0.95, 0.05, f'Median: {median_value:.2f}\nStd Dev: {std_dev:.2f}',
+                        verticalalignment='bottom', horizontalalignment='right',
+                        transform=plt.gca().transAxes, fontsize=10,
+                        bbox=dict(facecolor='white', alpha=0.5))
+                os.makedirs(os.path.join(os.path.dirname(args.json_path), os.path.splitext(os.path.basename(args.json_path))[0], "statistics"), exist_ok=True)
+                plt.savefig(os.path.join(os.path.dirname(args.json_path), os.path.splitext(os.path.basename(args.json_path))[0], "statistics", f"{checkpoint_name}-{key}.png"), dpi=300, bbox_inches='tight')
+                plt.close()
 
-    colors = ["y", "w", "g"]  # Yellow, White, Green
+        colors = ["w", "g"]  # Yellow, White, Green
+        mean_vmin = min(min(sublist) for sublist in organized_causal_strength[0])
+        mean_vmax = max(max(sublist) for sublist in organized_causal_strength[0])
+        median_vmin = min(min(sublist) for sublist in organized_causal_strength[1])
+        median_vmax = max(max(sublist) for sublist in organized_causal_strength[1])
+    else:
+        organized_causal_strength = [[causal_strength[f"{label[0]}_{layer_num}"], causal_strength[f"{label[1]}_{layer_num}"], causal_strength[f"{label[2]}_{layer_num}"]] for layer_num in range(1, 8)]
+        colors = ["y", "w", "g"]  # Yellow, White, Green
+        vmin = -1
+        vmax  = 1
     cmap = LinearSegmentedColormap.from_list('custom_cmap', colors)
+    
+    if args.soft_ver:
+        # Creating the heatmap for mean value
+        plt.figure(figsize=(4, 7))
+        ax = sns.heatmap(organized_causal_strength[0], annot=True, fmt=".2f", cmap=cmap, cbar=True, vmin=mean_vmin, vmax=mean_vmax, 
+                        yticklabels=['Layer 1', 'Layer 2', 'Layer 3', 'Layer 4', 'Layer 5', 'Layer 6', 'Layer 7'], 
+                        xticklabels=label,
+                        annot_kws={"size": 10, "ha": 'center', "va": 'center'})
 
-    # Creating the heatmap
-    plt.figure(figsize=(4, 7))
-    ax = sns.heatmap(organized_causal_strength, annot=False, cmap=cmap, cbar=True, vmin=-1, vmax=1, 
-                    yticklabels=['Layer 1', 'Layer 2', 'Layer 3', 'Layer 4', 'Layer 5', 'Layer 6', 'Layer 7'], 
-                    xticklabels=label)
+        # Adding a bold outside border
+        for _, spine in ax.spines.items():
+            spine.set_visible(True)
+            spine.set_linewidth(1.5)  # Make the border bold
 
-    # Adding a bold outside border
-    for _, spine in ax.spines.items():
-        spine.set_visible(True)
-        spine.set_linewidth(1.5)  # Make the border bold
+        # Rotate the y-axis tick labels to horizontal
+        plt.yticks(rotation=0, fontsize=12)
+        plt.xticks(fontsize=12)
 
-    # Rotate the y-axis tick labels to horizontal
-    plt.yticks(rotation=0, fontsize=12)
-    plt.xticks(fontsize=12)
+        # Customize the color bar
+        cbar = ax.collections[0].colorbar
+        cbar.ax.tick_params(labelsize=10)  # Change the tick label size
 
-    # Customize the color bar
-    cbar = ax.collections[0].colorbar
-    cbar.ax.tick_params(labelsize=10)  # Change the tick label size
+        # Adding a bold outside border for the color bar
+        cbar.outline.set_linewidth(1.5)  # Set the linewidth of the color bar border
+        cbar.outline.set_edgecolor('black')  # Set the color of the color bar border
 
-    # Adding a bold outside border for the color bar
-    cbar.outline.set_linewidth(1.5)  # Set the linewidth of the color bar border
-    cbar.outline.set_edgecolor('black')  # Set the color of the color bar border
+        # Save the heatmap
+        os.makedirs(os.path.join(os.path.dirname(args.json_path), os.path.splitext(os.path.basename(args.json_path))[0]), exist_ok=True)
+        plt.savefig(os.path.join(os.path.dirname(args.json_path), os.path.splitext(os.path.basename(args.json_path))[0], f"{checkpoint_name}_soft-ver_mean.png"), dpi=300, bbox_inches='tight')
+        
+        # Creating the heatmap for median value
+        plt.figure(figsize=(4, 7))
+        ax = sns.heatmap(organized_causal_strength[1], annot=True, fmt=".2f", cmap=cmap, cbar=True, vmin=median_vmin, vmax=median_vmax, 
+                        yticklabels=['Layer 1', 'Layer 2', 'Layer 3', 'Layer 4', 'Layer 5', 'Layer 6', 'Layer 7'], 
+                        xticklabels=label,
+                        annot_kws={"size": 10, "ha": 'center', "va": 'center'})
 
-    # Save the heatmap
-    os.makedirs(os.path.join(os.path.dirname(args.json_path), os.path.splitext(os.path.basename(args.json_path))[0]), exist_ok=True)
-    plt.savefig(os.path.join(os.path.dirname(args.json_path), os.path.splitext(os.path.basename(args.json_path))[0], f"{checkpoint_name}.png"), dpi=300, bbox_inches='tight')
+        # Adding a bold outside border
+        for _, spine in ax.spines.items():
+            spine.set_visible(True)
+            spine.set_linewidth(1.5)  # Make the border bold
+
+        # Rotate the y-axis tick labels to horizontal
+        plt.yticks(rotation=0, fontsize=12)
+        plt.xticks(fontsize=12)
+
+        # Customize the color bar
+        cbar = ax.collections[0].colorbar
+        cbar.ax.tick_params(labelsize=10)  # Change the tick label size
+
+        # Adding a bold outside border for the color bar
+        cbar.outline.set_linewidth(1.5)  # Set the linewidth of the color bar border
+        cbar.outline.set_edgecolor('black')  # Set the color of the color bar border
+
+        # Save the heatmap
+        os.makedirs(os.path.join(os.path.dirname(args.json_path), os.path.splitext(os.path.basename(args.json_path))[0]), exist_ok=True)
+        plt.savefig(os.path.join(os.path.dirname(args.json_path), os.path.splitext(os.path.basename(args.json_path))[0], f"{checkpoint_name}_soft-ver_median.png"), dpi=300, bbox_inches='tight')
+    else:
+        # Creating the heatmap
+        plt.figure(figsize=(4, 7))
+        ax = sns.heatmap(organized_causal_strength, annot=True, fmt=".2f", cmap=cmap, cbar=True, vmin=vmin, vmax=vmax, 
+                        yticklabels=['Layer 1', 'Layer 2', 'Layer 3', 'Layer 4', 'Layer 5', 'Layer 6', 'Layer 7'], 
+                        xticklabels=label,
+                        annot_kws={"size": 10, "ha": 'center', "va": 'center'})
+
+        # Adding a bold outside border
+        for _, spine in ax.spines.items():
+            spine.set_visible(True)
+            spine.set_linewidth(1.5)  # Make the border bold
+
+        # Rotate the y-axis tick labels to horizontal
+        plt.yticks(rotation=0, fontsize=12)
+        plt.xticks(fontsize=12)
+
+        # Customize the color bar
+        cbar = ax.collections[0].colorbar
+        cbar.ax.tick_params(labelsize=10)  # Change the tick label size
+
+        # Adding a bold outside border for the color bar
+        cbar.outline.set_linewidth(1.5)  # Set the linewidth of the color bar border
+        cbar.outline.set_edgecolor('black')  # Set the color of the color bar border
+
+        # Save the heatmap
+        os.makedirs(os.path.join(os.path.dirname(args.json_path), os.path.splitext(os.path.basename(args.json_path))[0]), exist_ok=True)
+        plt.savefig(os.path.join(os.path.dirname(args.json_path), os.path.splitext(os.path.basename(args.json_path))[0], f"{checkpoint_name}.png"), dpi=300, bbox_inches='tight')
 
 def visualize_causal_strength(args):
     
@@ -76,7 +174,10 @@ def visualize_causal_strength(args):
                                            "label1_rank_pos0", "label2_rank_pos0"]))
             ):
                 continue
-            causal_strength[key] = 0
+            if args.soft_ver:
+                causal_strength[key] = []
+            else:
+                causal_strength[key] = 0
             
         if args.task == "composition":
             all_keys = ["b_rank_pos1_", "r2_rank_pos2_", "h_", "r1_", "r2_"]
@@ -94,25 +195,33 @@ def visualize_causal_strength(args):
                 for intervention in all_keys:
                     key = intervention + str(layer_num)
                     if intervention in causal_strength_keys:
-                        if result[key] != original_rank:
-                            causal_strength[key] += 1
+                        if args.soft_ver:
+                            causal_strength[key].append(result[key] - original_rank)
+                        else:
+                            if result[key] != original_rank:
+                                causal_strength[key] += 1
                     mean_reciprocal_rank[key].append(1 / (1 + result[key]))
-                    
-        for key in causal_strength:
-            causal_strength[key] = causal_strength[key] / total_result_num
+        if not args.soft_ver:
+            for key in causal_strength:
+                causal_strength[key] = causal_strength[key] / total_result_num
         for key in mean_reciprocal_rank:
             mean_reciprocal_rank[key] = sum(mean_reciprocal_rank[key]) / len(mean_reciprocal_rank[key])
-            
+        
         if checkpoint == min_checkpoint_step:
             min_checkpoint_causal_strength = causal_strength
         elif checkpoint == max_checkpoint_step:
             max_checkpoint_causal_strength = causal_strength
         _visualize_causal_strength(causal_strength, checkpoint, args)
+        print("Each checkpoint visualization done!")
 
     difference_causal_strength = {}
     for key in max_checkpoint_causal_strength.keys():
-        difference_causal_strength[key] = max_checkpoint_causal_strength[key] - min_checkpoint_causal_strength[key]
+        if args.soft_ver:
+            difference_causal_strength[key] = [a - b for a, b in zip(max_checkpoint_causal_strength[key], min_checkpoint_causal_strength[key])]
+        else:
+            difference_causal_strength[key] = max_checkpoint_causal_strength[key] - min_checkpoint_causal_strength[key]
     _visualize_causal_strength(difference_causal_strength, f"{max_checkpoint_step}-{min_checkpoint_step}", args)
+    print(f"Difference visualization done!")
 
 
 def main(args):
@@ -127,6 +236,7 @@ if __name__=="__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--json_path", default=None, type=str, required=True, help="result JSON file path")
+    parser.add_argument("--soft_ver", action="store_true")
 
     args = parser.parse_args()
     main(args)

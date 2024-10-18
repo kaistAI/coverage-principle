@@ -22,6 +22,8 @@ def main():
 
     parser.add_argument("--num_layer", default=8, type=int, help="number of layer of the model")
     parser.add_argument("--wd", default=0.1, type=float, help="weight decay being used")
+    parser.add_argument("--seed", default=0, type=int, help="seed for numpy random")
+    parser.add_argument("--data_type", default="train_inferred", type=str, help="type of inference data (atomic_id, atomic_ood, train_inferred, test_inferred_iid, test_inferred_ood, ...)")
     
     args = parser.parse_args()
     
@@ -101,8 +103,9 @@ def main():
 
     results = {}
 
-    np.random.seed(0)
-    split = 'train_inferred'
+    np.random.seed(args.seed)
+    split = args.data_type
+    # split = 'train_inferred'
     rand_inds = np.random.choice(len(d[split]), 300, replace=False).tolist()
 
     target_layer = 8
@@ -142,14 +145,7 @@ def main():
                 )
             all_hidden_states = outputs['hidden_states'] 
 
-            # Original ver.
             rank_before = return_rank(all_hidden_states[target_layer][0, :, :], word_embedding, tokenizer("<"+t+">")['input_ids'][0])[-1]
-
-            # Why they didn't apply ln_f layer?
-            # with torch.no_grad():
-            #         temp = model.transformer.ln_f(all_hidden_states[target_layer])
-
-            # rank_before = return_rank(temp[0, :, :], word_embedding, tokenizer("<"+t+">")['input_ids'][0])[-1]
             res_dict['rank_before'] = rank_before
 
             # MRRs
@@ -304,7 +300,7 @@ def main():
         
         results[checkpoint] = full_list
 
-    with open(args.save_path, "w", encoding='utf-8') as f:
+    with open(os.path.join(args.save_path, f"{args.dataset}_{args.wd}_{args.num_layer}-{args.data_type}-{args.seed}.json"), "w", encoding='utf-8') as f:
         json.dump(results, f, indent=4)
 
 
