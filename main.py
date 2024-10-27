@@ -72,9 +72,18 @@ def main():
     parser.add_argument('--dist-backend', default='nccl', type=str, help='distributed backend')
     parser.add_argument('--local_rank', default=-1, type=int, help='local rank for distributed training')
     parser.add_argument('--gpu', default=None, type=int)
+    
+    # wandb config
+    parser.add_argument('--wandb_project', default="", type=str)
+    parser.add_argument('--wandb_entity', default="", type=str)
+    parser.add_argument('--wandb_exp', default='', type=str)
 
     args = parser.parse_args()
 
+    logging.basicConfig(level=logging.INFO)
+    transformers_logger = logging.getLogger("transformers")
+    transformers_logger.setLevel(logging.WARNING)
+    
     if (
         os.path.exists(args.output_dir)
         and os.listdir(args.output_dir)
@@ -146,6 +155,12 @@ def main():
         "n_inner": args.n_inner,
         "n_head": args.n_head,
         "memory_dim": args.memory_dim,
+        "wandb_project": args.wandb_project,
+        "wandb_kwargs": {
+            "entity": args.wandb_entity,
+            "name": args.wandb_exp,
+            },
+        "logging_steps": 10,
     }
 
     ddp_args = {

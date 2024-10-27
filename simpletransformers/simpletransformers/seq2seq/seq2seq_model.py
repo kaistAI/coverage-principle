@@ -574,8 +574,9 @@ class Seq2SeqModel:
                 ]
             )
 
-        for n, p in model.named_parameters():
-            print(n, p.shape)
+        if show_running_loss:
+            for n, p in model.named_parameters():
+                print(n, p.shape)
         
         num_total_params = 0
         print("# params:")
@@ -584,8 +585,8 @@ class Seq2SeqModel:
                 temp = p.numel()
                 print(temp, end="|")
                 num_total_params += temp
-        # print()
-        print("total number of optimized params:", num_total_params)
+        if show_running_loss:
+            print("total number of optimized params:", num_total_params)
 
         warmup_steps = math.ceil(t_total * args.warmup_ratio)
         args.warmup_steps = (
@@ -741,7 +742,7 @@ class Seq2SeqModel:
         if args.evaluate_during_training:
             training_progress_scores = self._create_training_progress_scores(**kwargs)
 
-        if args.wandb_project:
+        if args.wandb_project and show_running_loss:
             wandb.init(
                 project=args.wandb_project,
                 config={**asdict(args)},
@@ -826,10 +827,6 @@ class Seq2SeqModel:
                             model.parameters(), args.max_grad_norm
                         )
 
-                    # for name, param in model.named_parameters():
-                    #     if param.grad is None:
-                    #         print("*********", name)
-
                     if args.fp16:
                         scaler.step(optimizer)
                         scaler.update()
@@ -841,25 +838,26 @@ class Seq2SeqModel:
 
                     global_step += 1
 
-                    # if args.logging_steps > 0 and global_step % args.logging_steps == 0:
-                    #     # Log metrics
-                    #     tb_writer.add_scalar(
-                    #         "lr", scheduler.get_last_lr()[0], global_step
-                    #     )
-                    #     tb_writer.add_scalar(
-                    #         "loss",
-                    #         (tr_loss - logging_loss) / args.logging_steps,
-                    #         global_step,
-                    #     )
-                    #     logging_loss = tr_loss
-                    #     if args.wandb_project or self.is_sweeping:
-                    #         wandb.log(
-                    #             {
-                    #                 "Training loss": curr_LM_loss,
-                    #                 "lr": scheduler.get_last_lr()[0],
-                    #                 "global_step": global_step,
-                    #             }
-                    #         )
+                    if args.logging_steps > 0 and global_step % args.logging_steps == 0:
+                        if show_running_loss:
+                            # Log metrics
+                            tb_writer.add_scalar(
+                                "lr", scheduler.get_last_lr()[0], global_step
+                            )
+                            tb_writer.add_scalar(
+                                "loss",
+                                (tr_loss - logging_loss) / args.logging_steps,
+                                global_step,
+                            )
+                            logging_loss = tr_loss
+                            if args.wandb_project or self.is_sweeping:
+                                wandb.log(
+                                    {
+                                        "Training loss": loss.item(),
+                                        "lr": scheduler.get_last_lr()[0],
+                                        "global_step": global_step,
+                                    }
+                                )
 
                     if ((args.save_steps > 0) and (global_step % args.save_steps == 0)) or (save_step_dense>0 and global_step % save_step_dense_interval == 0 and global_step<=save_step_dense):
                             # save/eval via step only when epoch number is less
@@ -878,9 +876,17 @@ class Seq2SeqModel:
                                     silent=args.evaluate_during_training_silent,
                                     **kwargs,
                                 )
+                                if show_running_loss:
+                                    if args.wandb_project or self.is_sweeping:
+                                        wandb.log(
+                                            {
+                                                "Eval loss": results["eval_loss"],
+                                                "global_step": global_step,
+                                            }
+                                        )
                                 training_progress_scores["global_step"].append(global_step)
-                                training_progress_scores["epoch"].append(-1)
-                                training_progress_scores["train_loss"].append(-1.0)
+                                training_progress_scores["epoch"].append(current_epoch)
+                                training_progress_scores["train_loss"].append(loss.item())
                                 for key in results:
                                     training_progress_scores[key].append(results[key])
                                 report = pd.DataFrame(training_progress_scores)
