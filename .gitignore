@@ -5,4 +5,5 @@ runs/
 cache_dir/
 LLM/
 
-tracing/*/statistics/
+tracing/*
+wandb/
