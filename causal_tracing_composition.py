@@ -22,8 +22,14 @@ def main():
 
     parser.add_argument("--num_layer", default=8, type=int, help="number of layer of the model")
     parser.add_argument("--wd", default=0.1, type=float, help="weight decay being used")
+    parser.add_argument("--seed", default=0, type=int, help="seed for numpy random")
+    parser.add_argument("--data_type", default="train_inferred", type=str, help="type of inference data (atomic_id, atomic_ood, train_inferred, test_inferred_iid, test_inferred_ood, ...)")
     
     args = parser.parse_args()
+    
+    # Sanity check for composition & comparison
+    assert "comparison" not in args.dataset
+    
     dataset, model_dir = args.dataset, args.model_dir
 
     directory = os.path.join(model_dir, "{}_{}_{}".format(dataset, args.wd, args.num_layer))
@@ -95,10 +101,11 @@ def main():
     all_checkpoints = [checkpoint for checkpoint in os.listdir(directory) if checkpoint.startswith("checkpoint")]
     all_checkpoints.sort(key=lambda var: int(var.split("-")[1]))
 
-    results = []
+    results = {}
 
-    np.random.seed(0)
-    split = 'train_inferred'
+    np.random.seed(args.seed)
+    split = args.data_type
+    # split = 'train_inferred'
     rand_inds = np.random.choice(len(d[split]), 300, replace=False).tolist()
 
     target_layer = 8
@@ -136,7 +143,7 @@ def main():
                     attention_mask=decoder_attention_mask,
                     output_hidden_states=True
                 )
-            all_hidden_states = outputs['hidden_states']
+            all_hidden_states = outputs['hidden_states'] 
 
             rank_before = return_rank(all_hidden_states[target_layer][0, :, :], word_embedding, tokenizer("<"+t+">")['input_ids'][0])[-1]
             res_dict['rank_before'] = rank_before
@@ -290,10 +297,10 @@ def main():
 
             # print(res_dict)
             full_list.append(res_dict)
+        
+        results[checkpoint] = full_list
 
-        results.append(full_list)
-
-    with open(args.save_path, "w", encoding='utf-8') as f:
+    with open(os.path.join(args.save_path, f"{args.dataset}_{args.wd}_{args.num_layer}-{args.data_type}-{args.seed}.json"), "w", encoding='utf-8') as f:
         json.dump(results, f, indent=4)
 
 
