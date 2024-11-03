@@ -14,9 +14,9 @@ def _visualize_causal_strength(causal_strength, checkpoint_name, args):
         label = ["a", "e1", "e2"]
         
     if args.soft_ver:
-        organized_causal_strength = [[[0, 0, 0] for _ in range(1, 8)], [[0, 0, 0] for _ in range(1, 8)]]    # First is for mean value, second is for median value
+        organized_causal_strength = [[[0, 0, 0] for _ in range(1, args.num_layer)], [[0, 0, 0] for _ in range(1, args.num_layer)]]    # First is for mean value, second is for median value
         # Save each entities real value statistics
-        for i in range(1, 8):
+        for i in range(1, args.num_layer):
             for j, intervention in enumerate(label):
                 plt.figure(figsize=(20,10))
                 key = intervention + "_" + str(i)
@@ -50,7 +50,7 @@ def _visualize_causal_strength(causal_strength, checkpoint_name, args):
         median_vmin = min(min(sublist) for sublist in organized_causal_strength[1])
         median_vmax = max(max(sublist) for sublist in organized_causal_strength[1])
     else:
-        organized_causal_strength = [[causal_strength[f"{label[0]}_{layer_num}"], causal_strength[f"{label[1]}_{layer_num}"], causal_strength[f"{label[2]}_{layer_num}"]] for layer_num in range(1, 8)]
+        organized_causal_strength = [[causal_strength[f"{label[0]}_{layer_num}"], causal_strength[f"{label[1]}_{layer_num}"], causal_strength[f"{label[2]}_{layer_num}"]] for layer_num in range(1, args.num_layer)]
         colors = ["y", "w", "g"]  # Yellow, White, Green
         vmin = -1
         vmax  = 1
@@ -88,7 +88,7 @@ def _visualize_causal_strength(causal_strength, checkpoint_name, args):
         # Creating the heatmap for median value
         plt.figure(figsize=(4, 7))
         ax = sns.heatmap(organized_causal_strength[1], annot=True, fmt=".2f", cmap=cmap, cbar=True, vmin=median_vmin, vmax=median_vmax, 
-                        yticklabels=['Layer 1', 'Layer 2', 'Layer 3', 'Layer 4', 'Layer 5', 'Layer 6', 'Layer 7'], 
+                        yticklabels=[f"Layer {i}" for i in range(1, args.num_layer)], 
                         xticklabels=label,
                         annot_kws={"size": 10, "ha": 'center', "va": 'center'})
 
@@ -116,7 +116,7 @@ def _visualize_causal_strength(causal_strength, checkpoint_name, args):
         # Creating the heatmap
         plt.figure(figsize=(4, 7))
         ax = sns.heatmap(organized_causal_strength, annot=True, fmt=".2f", cmap=cmap, cbar=True, vmin=vmin, vmax=vmax, 
-                        yticklabels=['Layer 1', 'Layer 2', 'Layer 3', 'Layer 4', 'Layer 5', 'Layer 6', 'Layer 7'], 
+                        yticklabels=[f"Layer {i}" for i in range(1, args.num_layer)], 
                         xticklabels=label,
                         annot_kws={"size": 10, "ha": 'center', "va": 'center'})
 
@@ -191,7 +191,7 @@ def visualize_causal_strength(args):
         
         for result in raw_data:
             original_rank = result["rank_before"]
-            for layer_num in range(1, 8):
+            for layer_num in range(1, args.num_layer):
                 for intervention in all_keys:
                     key = intervention + str(layer_num)
                     if intervention in causal_strength_keys:
@@ -236,6 +236,7 @@ if __name__=="__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--json_path", default=None, type=str, required=True, help="result JSON file path")
+    parser.add_argument("--num_layer", default=8, type=int, help="number of layer of the model")
     parser.add_argument("--soft_ver", action="store_true")
 
     args = parser.parse_args()
