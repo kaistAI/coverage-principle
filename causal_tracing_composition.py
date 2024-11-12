@@ -11,30 +11,31 @@ import pandas as pd
 from copy import deepcopy
 import random
 import argparse
+from typing import List
 
 def main():
     
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--dataset", default=None, type=str, required=True, help="dataset name")
+    # parser.add_argument("--dataset", default=None, type=str, required=True, help="dataset name")
     parser.add_argument("--model_dir", default=None, type=str, help="parent directory of saved model checkpoints")
+    parser.add_argument("--step_list", default=None, nargs="+", help="checkpoint's steps to check causal strength")
     parser.add_argument("--save_path", default=None, type=str, help="path to save result")
 
     parser.add_argument("--num_layer", default=8, type=int, help="number of layer of the model")
-    parser.add_argument("--wd", default=0.1, type=float, help="weight decay being used")
-    parser.add_argument("--seed", default=0, type=int, help="seed for numpy random")
+    parser.add_argument("--target_layer", default=None, type=int, help="Target layer number for checking causal tracing")
+    # parser.add_argument("--wd", default=0.1, type=float, help="weight decay being used")
+    # parser.add_argument("--seed", default=0, type=int, help="seed for numpy random")
     parser.add_argument("--data_type", default="train_inferred", type=str, help="type of inference data (atomic_id, atomic_ood, train_inferred, test_inferred_iid, test_inferred_ood, ...)")
     
     args = parser.parse_args()
     
     # Sanity check for composition & comparison
-    assert "comparison" not in args.dataset
+    assert "comparison" not in args.model_dir
     
-    dataset, model_dir = args.dataset, args.model_dir
+    dataset = args.model_dir.split("/")[-1].split("_")[0]
 
-    directory = os.path.join(model_dir, "{}_{}_{}".format(dataset, args.wd, args.num_layer))
-
-    device = torch.device('cuda:0')
+    device = torch.device('cuda:1')
 
     all_atomic = set()     # (h,r,t)
     atomic_dict = dict()   # (h,r) -> t
@@ -98,21 +99,25 @@ def main():
             rank.append([var[0] for var in temp].index(token))
         return rank
 
-    all_checkpoints = [checkpoint for checkpoint in os.listdir(directory) if checkpoint.startswith("checkpoint")]
+    # if args.step_list == None:
+    all_checkpoints = [checkpoint for checkpoint in os.listdir(args.model_dir) if checkpoint.startswith("checkpoint")]
+    # else:
+    #     all_checkpoints = [f"checkpoint-{checkpoint}" for checkpoint in args.step_list]
+    assert all(os.path.isdir(os.path.join(args.model_dir, checkpoint)) for checkpoint in all_checkpoints)
     all_checkpoints.sort(key=lambda var: int(var.split("-")[1]))
 
     results = {}
 
-    np.random.seed(args.seed)
+    np.random.seed(0)
     split = args.data_type
-    # split = 'train_inferred'
     rand_inds = np.random.choice(len(d[split]), 300, replace=False).tolist()
 
-    target_layer = 8
+    target_layer = args.target_layer
+    total_layer = args.num_layer
 
     for checkpoint in tqdm(all_checkpoints):
         print("now checkpoint", checkpoint)
-        model_path = os.path.join(directory, checkpoint)
+        model_path = os.path.join(args.model_dir, checkpoint)
         model = GPT2LMHeadModel.from_pretrained(model_path).to(device)
         word_embedding = model.lm_head.weight.data
         tokenizer = GPT2Tokenizer.from_pretrained(model_path)
@@ -149,158 +154,157 @@ def main():
             res_dict['rank_before'] = rank_before
 
             # MRRs
-            for layer_ind in range(1, 8):
+            for layer_ind in range(1, total_layer):
                 hidden_states_orig = all_hidden_states[layer_ind]
                 with torch.no_grad():
                     temp = model.transformer.ln_f(hidden_states_orig)
                 res_dict['b_rank_pos1_'+str(layer_ind)] = return_rank(temp[0, :, :], word_embedding, tokenizer("<"+b+">")['input_ids'][0])[1]
                 res_dict['r2_rank_pos2_'+str(layer_ind)] = return_rank(temp[0, :, :], word_embedding, tokenizer("<"+r+">")['input_ids'][0])[2]
-
-            # perturb the head entity
-            all_ = set()
-            assert (h, n_r) in atomic_dict
-            for head in h2rt_train:
-                if (head, n_r) not in atomic_dict:
-                    all_.add(head)
-                    continue
-                tail = atomic_dict[(head, n_r)]
-                if (tail, r) not in atomic_dict or atomic_dict[(tail, r)] != t:
-                    all_.add(head)
-            query = "<{}>".format(random.choice(list(all_)))
-
-            decoder_temp = tokenizer([query], return_tensors="pt", padding=True)
-            decoder_input_ids_, decoder_attention_mask = decoder_temp["input_ids"], decoder_temp["attention_mask"]
-            decoder_input_ids_, decoder_attention_mask = decoder_input_ids_.to(device), decoder_attention_mask.to(device)
-
-            with torch.no_grad():
-                outputs_ctft = model(
-                    input_ids=decoder_input_ids_,
-                    attention_mask=decoder_attention_mask,
-                    output_hidden_states=True
-                )
-            all_hidden_states_ctft = outputs_ctft['hidden_states']
-
-            for layer_to_intervene in range(1, target_layer):
-                hidden_states = all_hidden_states[layer_to_intervene].clone()
-                hidden_states_ctft = all_hidden_states_ctft[layer_to_intervene]
-                # intervene
-                hidden_states[0, 0, :] = hidden_states_ctft[0, 0, :]
-
-                with torch.no_grad():
-                    for i in range(layer_to_intervene, target_layer):
-                        f_layer = model.transformer.h[i]
-                        # attn
-                        residual = hidden_states
-                        hidden_states = f_layer.ln_1(hidden_states)
-                        attn_output = f_layer.attn(hidden_states)[0] 
-                        hidden_states = attn_output + residual
-                        # mlp
-                        residual = hidden_states
-                        hidden_states = f_layer.ln_2(hidden_states)
-                        feed_forward_hidden_states = f_layer.mlp.c_proj(f_layer.mlp.act(f_layer.mlp.c_fc(hidden_states)))
-                        hidden_states = residual + feed_forward_hidden_states
-                    # final ln
-                    hidden_states = model.transformer.ln_f(hidden_states)
-                # print("--------")
-                rank_after = return_rank(hidden_states[0, :, :], word_embedding, tokenizer("<"+t+">")['input_ids'][0])[-1]
-                res_dict['h_'+str(layer_to_intervene)] = rank_after
             
-            # perturb the 1st relation
-            all_ = set()
-            rt_list = h2rt_train[h]
-            for (relation, tail) in rt_list:
-                if (tail, r) not in atomic_dict or atomic_dict[(tail, r)] != t:
-                    all_.add(relation)
-            query = "<{}><{}>".format(h, random.choice(list(all_)))
+            if checkpoint in [f"checkpoint-{step}" for step in args.step_list]:
+                # perturb the head entity
+                all_ = set()
+                assert (h, n_r) in atomic_dict
+                for head in h2rt_train:
+                    if (head, n_r) not in atomic_dict:
+                        all_.add(head)
+                        continue
+                    tail = atomic_dict[(head, n_r)]
+                    if (tail, r) not in atomic_dict or atomic_dict[(tail, r)] != t:
+                        all_.add(head)
+                query = "<{}>".format(random.choice(list(all_)))
 
-            decoder_temp = tokenizer([query], return_tensors="pt", padding=True)
-            decoder_input_ids_, decoder_attention_mask = decoder_temp["input_ids"], decoder_temp["attention_mask"]
-            decoder_input_ids_, decoder_attention_mask = decoder_input_ids_.to(device), decoder_attention_mask.to(device)
-            with torch.no_grad():
-                outputs_ctft = model(
-                    input_ids=decoder_input_ids_,
-                    attention_mask=decoder_attention_mask,
-                    output_hidden_states=True
-                )
-            all_hidden_states_ctft = outputs_ctft['hidden_states']
-
-            for layer_to_intervene in range(1, target_layer):
-                hidden_states = all_hidden_states[layer_to_intervene].clone()
-                hidden_states_ctft = all_hidden_states_ctft[layer_to_intervene]
-                # intervene
-                hidden_states[0, 1, :] = hidden_states_ctft[0, 1, :]
+                decoder_temp = tokenizer([query], return_tensors="pt", padding=True)
+                decoder_input_ids_, decoder_attention_mask = decoder_temp["input_ids"], decoder_temp["attention_mask"]
+                decoder_input_ids_, decoder_attention_mask = decoder_input_ids_.to(device), decoder_attention_mask.to(device)
 
                 with torch.no_grad():
-                    for i in range(layer_to_intervene, target_layer):
-                        f_layer = model.transformer.h[i]
-                        # attn
-                        residual = hidden_states
-                        hidden_states = f_layer.ln_1(hidden_states)
-                        attn_output = f_layer.attn(hidden_states)[0] 
-                        hidden_states = attn_output + residual
-                        # mlp
-                        residual = hidden_states
-                        hidden_states = f_layer.ln_2(hidden_states)
-                        feed_forward_hidden_states = f_layer.mlp.c_proj(f_layer.mlp.act(f_layer.mlp.c_fc(hidden_states)))
-                        hidden_states = residual + feed_forward_hidden_states
-                    # final ln
-                    hidden_states = model.transformer.ln_f(hidden_states)
-                # print("--------")
-                rank_after = return_rank(hidden_states[0, :, :], word_embedding, tokenizer("<"+t+">")['input_ids'][0])[-1]
-                res_dict['r1_'+str(layer_to_intervene)] = rank_after
-            
-            # perturb the second relation
-            all_ = set()
-            rt_list = h2rt_train[b]
-            for (relation, tail) in rt_list:
-                if tail != t:
-                    assert relation != r
-                    all_.add(relation)
-            query = "<{}><{}><{}>".format(h, n_r, random.choice(list(all_)))
+                    outputs_ctft = model(
+                        input_ids=decoder_input_ids_,
+                        attention_mask=decoder_attention_mask,
+                        output_hidden_states=True
+                    )
+                all_hidden_states_ctft = outputs_ctft['hidden_states']
 
-            decoder_temp = tokenizer([query], return_tensors="pt", padding=True)
-            decoder_input_ids_, decoder_attention_mask = decoder_temp["input_ids"], decoder_temp["attention_mask"]
-            decoder_input_ids_, decoder_attention_mask = decoder_input_ids_.to(device), decoder_attention_mask.to(device)
+                for layer_to_intervene in range(1, target_layer):
+                    hidden_states = all_hidden_states[layer_to_intervene].clone()
+                    hidden_states_ctft = all_hidden_states_ctft[layer_to_intervene]
+                    # intervene
+                    hidden_states[0, 0, :] = hidden_states_ctft[0, 0, :]
 
-            with torch.no_grad():
-                outputs_ctft = model(
-                    input_ids=decoder_input_ids_,
-                    attention_mask=decoder_attention_mask,
-                    output_hidden_states=True
-                )
-            all_hidden_states_ctft = outputs_ctft['hidden_states']
+                    with torch.no_grad():
+                        for i in range(layer_to_intervene, target_layer):
+                            f_layer = model.transformer.h[i]
+                            # attn
+                            residual = hidden_states
+                            hidden_states = f_layer.ln_1(hidden_states)
+                            attn_output = f_layer.attn(hidden_states)[0] 
+                            hidden_states = attn_output + residual
+                            # mlp
+                            residual = hidden_states
+                            hidden_states = f_layer.ln_2(hidden_states)
+                            feed_forward_hidden_states = f_layer.mlp.c_proj(f_layer.mlp.act(f_layer.mlp.c_fc(hidden_states)))
+                            hidden_states = residual + feed_forward_hidden_states
+                        # final ln
+                        hidden_states = model.transformer.ln_f(hidden_states)
+                    # print("--------")
+                    rank_after = return_rank(hidden_states[0, :, :], word_embedding, tokenizer("<"+t+">")['input_ids'][0])[-1]
+                    res_dict['h_'+str(layer_to_intervene)] = rank_after
+                
+                # perturb the 1st relation
+                all_ = set()
+                rt_list = h2rt_train[h]
+                for (relation, tail) in rt_list:
+                    if (tail, r) not in atomic_dict or atomic_dict[(tail, r)] != t:
+                        all_.add(relation)
+                query = "<{}><{}>".format(h, random.choice(list(all_)))
 
-            for layer_to_intervene in range(1, target_layer):
-                hidden_states = all_hidden_states[layer_to_intervene].clone()
-                hidden_states_ctft = all_hidden_states_ctft[layer_to_intervene]
-                # intervene
-                hidden_states[0, 2, :] = hidden_states_ctft[0, 2, :]
+                decoder_temp = tokenizer([query], return_tensors="pt", padding=True)
+                decoder_input_ids_, decoder_attention_mask = decoder_temp["input_ids"], decoder_temp["attention_mask"]
+                decoder_input_ids_, decoder_attention_mask = decoder_input_ids_.to(device), decoder_attention_mask.to(device)
+                with torch.no_grad():
+                    outputs_ctft = model(
+                        input_ids=decoder_input_ids_,
+                        attention_mask=decoder_attention_mask,
+                        output_hidden_states=True
+                    )
+                all_hidden_states_ctft = outputs_ctft['hidden_states']
+
+                for layer_to_intervene in range(1, target_layer):
+                    hidden_states = all_hidden_states[layer_to_intervene].clone()
+                    hidden_states_ctft = all_hidden_states_ctft[layer_to_intervene]
+                    # intervene
+                    hidden_states[0, 1, :] = hidden_states_ctft[0, 1, :]
+
+                    with torch.no_grad():
+                        for i in range(layer_to_intervene, target_layer):
+                            f_layer = model.transformer.h[i]
+                            # attn
+                            residual = hidden_states
+                            hidden_states = f_layer.ln_1(hidden_states)
+                            attn_output = f_layer.attn(hidden_states)[0] 
+                            hidden_states = attn_output + residual
+                            # mlp
+                            residual = hidden_states
+                            hidden_states = f_layer.ln_2(hidden_states)
+                            feed_forward_hidden_states = f_layer.mlp.c_proj(f_layer.mlp.act(f_layer.mlp.c_fc(hidden_states)))
+                            hidden_states = residual + feed_forward_hidden_states
+                        # final ln
+                        hidden_states = model.transformer.ln_f(hidden_states)
+                    # print("--------")
+                    rank_after = return_rank(hidden_states[0, :, :], word_embedding, tokenizer("<"+t+">")['input_ids'][0])[-1]
+                    res_dict['r1_'+str(layer_to_intervene)] = rank_after
+                
+                # perturb the second relation
+                all_ = set()
+                rt_list = h2rt_train[b]
+                for (relation, tail) in rt_list:
+                    if tail != t:
+                        assert relation != r
+                        all_.add(relation)
+                query = "<{}><{}><{}>".format(h, n_r, random.choice(list(all_)))
+
+                decoder_temp = tokenizer([query], return_tensors="pt", padding=True)
+                decoder_input_ids_, decoder_attention_mask = decoder_temp["input_ids"], decoder_temp["attention_mask"]
+                decoder_input_ids_, decoder_attention_mask = decoder_input_ids_.to(device), decoder_attention_mask.to(device)
 
                 with torch.no_grad():
-                    for i in range(layer_to_intervene, target_layer):
-                        f_layer = model.transformer.h[i]
-                        # attn
-                        residual = hidden_states
-                        hidden_states = f_layer.ln_1(hidden_states)
-                        attn_output = f_layer.attn(hidden_states)[0] 
-                        hidden_states = attn_output + residual
-                        # mlp
-                        residual = hidden_states
-                        hidden_states = f_layer.ln_2(hidden_states)
-                        feed_forward_hidden_states = f_layer.mlp.c_proj(f_layer.mlp.act(f_layer.mlp.c_fc(hidden_states)))
-                        hidden_states = residual + feed_forward_hidden_states
-                    # final ln
-                    hidden_states = model.transformer.ln_f(hidden_states)
-                # print("--------")
-                rank_after = return_rank(hidden_states[0, :, :], word_embedding, tokenizer("<"+t+">")['input_ids'][0])[-1]
-                res_dict['r2_'+str(layer_to_intervene)] = rank_after
+                    outputs_ctft = model(
+                        input_ids=decoder_input_ids_,
+                        attention_mask=decoder_attention_mask,
+                        output_hidden_states=True
+                    )
+                all_hidden_states_ctft = outputs_ctft['hidden_states']
 
-            # print(res_dict)
+                for layer_to_intervene in range(1, target_layer):
+                    hidden_states = all_hidden_states[layer_to_intervene].clone()
+                    hidden_states_ctft = all_hidden_states_ctft[layer_to_intervene]
+                    # intervene
+                    hidden_states[0, 2, :] = hidden_states_ctft[0, 2, :]
+
+                    with torch.no_grad():
+                        for i in range(layer_to_intervene, target_layer):
+                            f_layer = model.transformer.h[i]
+                            # attn
+                            residual = hidden_states
+                            hidden_states = f_layer.ln_1(hidden_states)
+                            attn_output = f_layer.attn(hidden_states)[0] 
+                            hidden_states = attn_output + residual
+                            # mlp
+                            residual = hidden_states
+                            hidden_states = f_layer.ln_2(hidden_states)
+                            feed_forward_hidden_states = f_layer.mlp.c_proj(f_layer.mlp.act(f_layer.mlp.c_fc(hidden_states)))
+                            hidden_states = residual + feed_forward_hidden_states
+                        # final ln
+                        hidden_states = model.transformer.ln_f(hidden_states)
+                    rank_after = return_rank(hidden_states[0, :, :], word_embedding, tokenizer("<"+t+">")['input_ids'][0])[-1]
+                    res_dict['r2_'+str(layer_to_intervene)] = rank_after
+
             full_list.append(res_dict)
         
         results[checkpoint] = full_list
 
-    with open(os.path.join(args.save_path, f"{args.dataset}_{args.wd}_{args.num_layer}-{args.data_type}-{args.seed}.json"), "w", encoding='utf-8') as f:
+    with open(os.path.join(args.save_path, f"{args.model_dir.split('/')[-1]}-{args.data_type}.json"), "w", encoding='utf-8') as f:
         json.dump(results, f, indent=4)
 
 

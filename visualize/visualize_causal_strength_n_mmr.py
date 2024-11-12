@@ -7,16 +7,56 @@ from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
 from collections import Counter
 
-def _visualize_causal_strength(causal_strength, checkpoint_name, args):
+def visualize_mmr(mean_reciprocal_rank, args):
+    checkpoint_steps = [k for k in mean_reciprocal_rank.keys()]
+    checkpoint_steps.sort(key = lambda var: int(var.split("-")[1]))
+    # checkpoint_steps = [int(k.split("-")[-1]) for k in mean_reciprocal_rank.keys()]
+    # checkpoint_steps.sort()
+
+    labels = ["b_rank_pos1", "r2_rank_pos2"]
+
+    for label in labels:
+        data = {}
+        for layer_idx in range(1, args.num_layer):
+            _data = []
+            for checkpoint_step in checkpoint_steps:
+                _data.append(mean_reciprocal_rank[checkpoint_step][f"{label}_{layer_idx}"])
+            data[f"layer {layer_idx}"] = _data
+        
+        colors = ["Black", "Orange", "Yellow", "Cyan", "Gray", "Brown", "Magenta", "Teal", "Gold", "Navy"]
+    
+        # Plotting each key in _data as a line with checkpoint_steps as the x-axis
+        plt.figure(figsize=(10, 6))
+        for idx, (key, values) in enumerate(data.items()):
+            plt.plot([int(step.split("-")[-1]) for step in checkpoint_steps], values, marker='o', color=colors[idx], label=key)
+        
+        # Set x-axis to log scale and customize ticks
+        plt.xscale("log")
+        plt.xticks([1e4, 5e4, 1e5])
+
+        # Adding labels, title, and legend
+        plt.xlabel('Checkpoint Steps')
+        plt.ylabel('MMR')
+        plt.title(f'Line Plot of {label} by Checkpoint Steps')
+        plt.legend(title='Data Keys')
+        plt.grid(True)
+        
+        # Save the plot
+        os.makedirs(os.path.join(os.path.dirname(args.json_path), os.path.splitext(os.path.basename(args.json_path))[0]), exist_ok=True)
+        plt.savefig(os.path.join(os.path.dirname(args.json_path), os.path.splitext(os.path.basename(args.json_path))[0], f"MMR_{label.replace('_', '-')}.png"), dpi=300, bbox_inches='tight')
+        # plt.savefig(os.path.join(args.model_dir, "accuracy.png"), format="png", dpi=300)
+    
+
+def visualize_causal_strength(causal_strength, checkpoint_name, args):
     if args.task == "composition":
         label = ["h", "r1", "r2"]
     else:
         label = ["a", "e1", "e2"]
         
     if args.soft_ver:
-        organized_causal_strength = [[[0, 0, 0] for _ in range(1, 8)], [[0, 0, 0] for _ in range(1, 8)]]    # First is for mean value, second is for median value
+        organized_causal_strength = [[[0, 0, 0] for _ in range(1, args.num_layer)], [[0, 0, 0] for _ in range(1, args.num_layer)]]    # First is for mean value, second is for median value
         # Save each entities real value statistics
-        for i in range(1, 8):
+        for i in range(1, args.num_layer):
             for j, intervention in enumerate(label):
                 plt.figure(figsize=(20,10))
                 key = intervention + "_" + str(i)
@@ -50,10 +90,11 @@ def _visualize_causal_strength(causal_strength, checkpoint_name, args):
         median_vmin = min(min(sublist) for sublist in organized_causal_strength[1])
         median_vmax = max(max(sublist) for sublist in organized_causal_strength[1])
     else:
-        organized_causal_strength = [[causal_strength[f"{label[0]}_{layer_num}"], causal_strength[f"{label[1]}_{layer_num}"], causal_strength[f"{label[2]}_{layer_num}"]] for layer_num in range(1, 8)]
+        organized_causal_strength = [[causal_strength[f"{label[0]}_{layer_num}"], causal_strength[f"{label[1]}_{layer_num}"], causal_strength[f"{label[2]}_{layer_num}"]] for layer_num in range(1, args.num_layer)]
         colors = ["y", "w", "g"]  # Yellow, White, Green
         vmin = -1
         vmax  = 1
+    print(f"Organizing Causal Strength is done!")
     cmap = LinearSegmentedColormap.from_list('custom_cmap', colors)
     
     if args.soft_ver:
@@ -88,7 +129,7 @@ def _visualize_causal_strength(causal_strength, checkpoint_name, args):
         # Creating the heatmap for median value
         plt.figure(figsize=(4, 7))
         ax = sns.heatmap(organized_causal_strength[1], annot=True, fmt=".2f", cmap=cmap, cbar=True, vmin=median_vmin, vmax=median_vmax, 
-                        yticklabels=['Layer 1', 'Layer 2', 'Layer 3', 'Layer 4', 'Layer 5', 'Layer 6', 'Layer 7'], 
+                        yticklabels=[f"Layer {i}" for i in range(1, args.num_layer)], 
                         xticklabels=label,
                         annot_kws={"size": 10, "ha": 'center', "va": 'center'})
 
@@ -116,7 +157,7 @@ def _visualize_causal_strength(causal_strength, checkpoint_name, args):
         # Creating the heatmap
         plt.figure(figsize=(4, 7))
         ax = sns.heatmap(organized_causal_strength, annot=True, fmt=".2f", cmap=cmap, cbar=True, vmin=vmin, vmax=vmax, 
-                        yticklabels=['Layer 1', 'Layer 2', 'Layer 3', 'Layer 4', 'Layer 5', 'Layer 6', 'Layer 7'], 
+                        yticklabels=[f"Layer {i}" for i in range(1, args.num_layer)], 
                         xticklabels=label,
                         annot_kws={"size": 10, "ha": 'center', "va": 'center'})
 
@@ -141,7 +182,7 @@ def _visualize_causal_strength(causal_strength, checkpoint_name, args):
         os.makedirs(os.path.join(os.path.dirname(args.json_path), os.path.splitext(os.path.basename(args.json_path))[0]), exist_ok=True)
         plt.savefig(os.path.join(os.path.dirname(args.json_path), os.path.splitext(os.path.basename(args.json_path))[0], f"{checkpoint_name}.png"), dpi=300, bbox_inches='tight')
 
-def visualize_causal_strength(args):
+def visualize_causal_strength_n_mmr(args):
     
     with open(args.json_path, "r") as f:
         raw_datas = json.load(f)
@@ -149,23 +190,30 @@ def visualize_causal_strength(args):
     # min & max checkpoint steps
     all_checkpoints = [key for key in raw_datas.keys()]
     all_checkpoints.sort(key=lambda var: int(var.split("-")[1]))
-    min_checkpoint_step = all_checkpoints[0]
-    max_checkpoint_step = all_checkpoints[-1]
+    
+    if args.step_list == None:
+        min_checkpoint_step = all_checkpoints[0]
+        max_checkpoint_step = all_checkpoints[-1]
+        causal_strength_step = all_checkpoints
+    else:
+        min_checkpoint_step = f"checkpoint-{args.step_list[0]}"
+        max_checkpoint_step = f"checkpoint-{args.step_list[-1]}"
+        causal_strength_step = [f"checkpoint-{step}" for step in args.step_list]
     
     min_checkpoint_causal_strength = None
     max_checkpoint_causal_strength = None
     
+    mean_reciprocal_rank = {}
+    
     for checkpoint, raw_data in raw_datas.items():
         total_result_num = len(raw_data)
 
-        mean_reciprocal_rank = {}
+        mean_reciprocal_rank_for_checkpoint = {}
         causal_strength = {}
 
         for key in raw_data[0].keys():
-            # Every keys will have MMR except "rank_before" key
             if key == "rank_before":
                 continue
-            mean_reciprocal_rank[key] = []
             # This keys only used in MMR not in Causal Strength
             if ((args.task == "composition" 
                  and any((k in key for k in ["b_rank_pos1", "r2_rank_pos2"])))
@@ -173,6 +221,7 @@ def visualize_causal_strength(args):
                 and any(k in key for k in ["val1_rank_pos2", "val2_rank_pos4", "label0_rank_pos0", 
                                            "label1_rank_pos0", "label2_rank_pos0"]))
             ):
+                mean_reciprocal_rank_for_checkpoint[key] = []
                 continue
             if args.soft_ver:
                 causal_strength[key] = []
@@ -181,7 +230,7 @@ def visualize_causal_strength(args):
             
         if args.task == "composition":
             all_keys = ["b_rank_pos1_", "r2_rank_pos2_", "h_", "r1_", "r2_"]
-            causal_strength_keys = ["h_", "r1_", "r2_"]
+            causal_strength_keys = all_keys[2:]
         elif args.task == "comparison":
             all_keys = ["val1_rank_pos2_", "val2_rank_pos4_", "label0_rank_pos0_", 
                         "label1_rank_pos0_", "label2_rank_pos0_", "e1_", "e2_", "a_"]
@@ -189,30 +238,44 @@ def visualize_causal_strength(args):
         else:
             raise NotImplementedError
         
+        # Organizing data
         for result in raw_data:
             original_rank = result["rank_before"]
-            for layer_num in range(1, 8):
+            for layer_num in range(1, args.num_layer):
                 for intervention in all_keys:
                     key = intervention + str(layer_num)
-                    if intervention in causal_strength_keys:
-                        if args.soft_ver:
-                            causal_strength[key].append(result[key] - original_rank)
+                    if checkpoint in causal_strength_step:
+                        if intervention in causal_strength_keys:
+                            if args.soft_ver:
+                                causal_strength[key].append(result[key] - original_rank)
+                            else:
+                                if result[key] != original_rank:
+                                    causal_strength[key] += 1
                         else:
-                            if result[key] != original_rank:
-                                causal_strength[key] += 1
-                    mean_reciprocal_rank[key].append(1 / (1 + result[key]))
-        if not args.soft_ver:
+                            mean_reciprocal_rank_for_checkpoint[key].append(1 / (1 + result[key]))
+                    else:
+                        if not intervention in causal_strength_keys:
+                            mean_reciprocal_rank_for_checkpoint[key].append(1 / (1 + result[key]))
+        # Average the value
+        if checkpoint in causal_strength_step and not args.soft_ver:
             for key in causal_strength:
                 causal_strength[key] = causal_strength[key] / total_result_num
-        for key in mean_reciprocal_rank:
-            mean_reciprocal_rank[key] = sum(mean_reciprocal_rank[key]) / len(mean_reciprocal_rank[key])
+        for key in mean_reciprocal_rank_for_checkpoint:
+            mean_reciprocal_rank_for_checkpoint[key] = sum(mean_reciprocal_rank_for_checkpoint[key]) / len(mean_reciprocal_rank_for_checkpoint[key])
+        
+        mean_reciprocal_rank[checkpoint] = mean_reciprocal_rank_for_checkpoint
         
         if checkpoint == min_checkpoint_step:
             min_checkpoint_causal_strength = causal_strength
         elif checkpoint == max_checkpoint_step:
             max_checkpoint_causal_strength = causal_strength
-        _visualize_causal_strength(causal_strength, checkpoint, args)
-        print("Each checkpoint visualization done!")
+        
+        # Causal Strength Visualization
+        if checkpoint in causal_strength_step:
+            visualize_causal_strength(causal_strength, checkpoint, args)
+            print("Each checkpoint visualization done!")
+    
+    visualize_mmr(mean_reciprocal_rank, args)
 
     difference_causal_strength = {}
     for key in max_checkpoint_causal_strength.keys():
@@ -220,7 +283,7 @@ def visualize_causal_strength(args):
             difference_causal_strength[key] = [a - b for a, b in zip(max_checkpoint_causal_strength[key], min_checkpoint_causal_strength[key])]
         else:
             difference_causal_strength[key] = max_checkpoint_causal_strength[key] - min_checkpoint_causal_strength[key]
-    _visualize_causal_strength(difference_causal_strength, f"{max_checkpoint_step}-{min_checkpoint_step}", args)
+    visualize_causal_strength(difference_causal_strength, f"{max_checkpoint_step}-{min_checkpoint_step}", args)
     print(f"Difference visualization done!")
 
 
@@ -229,13 +292,16 @@ def main(args):
         args.task = "composition"
     else:
         args.task = "comparison"
-    visualize_causal_strength(args)
+    visualize_causal_strength_n_mmr(args)
 
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--json_path", default=None, type=str, required=True, help="result JSON file path")
+    parser.add_argument("--step_list", default=None, nargs="+", help="checkpoint's steps to check causal strength")
+    
+    parser.add_argument("--num_layer", default=8, type=int, help="number of layer of the model")
     parser.add_argument("--soft_ver", action="store_true")
 
     args = parser.parse_args()
