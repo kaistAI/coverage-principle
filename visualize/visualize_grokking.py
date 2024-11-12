@@ -120,7 +120,6 @@ if __name__=="__main__":
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_dir", default=None, type=str, help="parent directory of saved model checkpoints")
-    parser.add_argument("--save_path", default=None, type=str, help="path to save result")
     
     args = parser.parse_args()
     
