@@ -51,6 +51,7 @@ def main():
     parser.add_argument("--save_step", default=0, type=int, help="Save checkpoint every X updates steps. 0 for no saving")
     parser.add_argument("--save_step_dense", default=-1, type=int, help="If not -1, save via every save_step_dense_interval steps till specified")
     parser.add_argument("--save_step_dense_interval", default=2000, type=int, help="")
+    parser.add_argument("--save_fine_step_list", default=None, nargs="+", help="checkpoint's steps to save for trajectory analysis")
     parser.add_argument("--train_batch_size", default=16, type=int, help="Size of each train batch")
     parser.add_argument("--eval_batch_size", default=16, type=int, help="Size of each eval/predict batch")
     parser.add_argument("--gradient_accumulation_steps", default=1, type=int, help="gradient accumulation steps")
@@ -66,7 +67,7 @@ def main():
     parser.add_argument("--prediction_cutoff", default=None, type=int, help="if set, only predict on the first # of prediction examples")
     
     # DDP configs:
-    parser.add_argument('--world-size', default=-1, type=int, help='number of nodes for distributed training')
+    parser.add_argument('--world_size', default=-1, type=int, help='number of nodes for distributed training')
     parser.add_argument('--rank', default=-1, type=int, help='node rank for distributed training')
     parser.add_argument('--dist-url', default='env://', type=str, help='url used to set up distributed training')
     parser.add_argument('--dist-backend', default='nccl', type=str, help='distributed backend')
@@ -103,7 +104,7 @@ def main():
         train_df = None
 
     if args.do_eval or args.evaluate_during_training:
-        eval_df = read_data_source_target(os.path.join(args.data_dir, "valid.json"))
+        eval_df = read_data_source_target(os.path.join(args.data_dir, "test.json"))
     else:
         eval_df = None
 
@@ -194,11 +195,14 @@ def main():
     # Train the model
     if args.do_train:
         model.train_model(train_data=train_df, eval_data=eval_df, test_data=test_df, output_dir=args.output_dir,
-                          save_step_dense=args.save_step_dense, save_step_dense_interval=args.save_step_dense_interval)
+                          save_step_dense=args.save_step_dense, save_step_dense_interval=args.save_step_dense_interval, save_fine_step_list=args.save_fine_step_list)
 
     # Evaluate the model
-    if args.do_eval:
-        results = model.eval_model(eval_data=eval_df)
+    # if args.do_eval:
+    #     eval_dataset = Seq2SeqModel.load_and_cache_examples(
+    #             eval_df, verbose=True
+    #         )
+        # results = model.eval_model(eval_data=eval_df)
 
     # Use the model for prediction
     if args.do_predict:

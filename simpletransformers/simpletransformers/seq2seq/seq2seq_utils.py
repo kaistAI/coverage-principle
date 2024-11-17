@@ -315,9 +315,12 @@ class Seq2SeqDataset(Dataset):
         return self.examples[index]
 
 
-def preprocess_data_bart(data):
-    input_text, target_text, lm_tokenizer, args = data
-
+def preprocess_data_bart(data, mode):
+    if mode == "dev":
+        input_text, target_text, data_type, lm_tokenizer, args = data
+    else:
+        input_text, target_text, lm_tokenizer, args = data
+    
     if type(input_text) == list:
         assert type(target_text) == list
         target_ids = torch.tensor(target_text)
@@ -345,10 +348,17 @@ def preprocess_data_bart(data):
     lm_labels[lm_labels == lm_tokenizer.pad_token_id] = -100
     lm_labels[:len(target_prefix_ids)] = -100  # no loss on prefix tokens
     
-    return {
+    if mode == "dev":
+        return {
         "target_ids": target_ids,
         "lm_labels": lm_labels,
+        "type": data_type
     }
+    else: 
+        return {
+            "target_ids": target_ids,
+            "lm_labels": lm_labels,
+        }
 
 def preprocess_data_mbart(data):
     input_text, target_text, tokenizer, args = data
@@ -399,11 +409,16 @@ class SimpleSummarizationDataset(Dataset):
                 self.examples = pickle.load(handle)
         else:
             logger.info(" Creating features from dataset file at %s", args.cache_dir)
-
-            data = [
-                (input_text, target_text, lm_tokenizer, args)
-                for input_text, target_text in zip(data["input_text"], data["target_text"])
-            ]
+            if mode == "dev":
+                data = [
+                    (input_text, target_text, data_type, lm_tokenizer, args)
+                    for input_text, target_text, data_type in zip(data["input_text"], data["target_text"], data["type"])
+                ]
+            else:
+                data = [
+                    (input_text, target_text, lm_tokenizer, args)
+                    for input_text, target_text in zip(data["input_text"], data["target_text"])
+                ]
 
             # if (mode == "train" and args.use_multiprocessing) or (
             #     mode == "dev" and args.use_multiprocessing_for_evaluation
@@ -426,7 +441,7 @@ class SimpleSummarizationDataset(Dataset):
             #         preprocess_data_bart(d) for d in tqdm(data, disable=args.silent)
             #     ]
             self.examples = [
-                preprocess_data_bart(d) for d in tqdm(data, disable=args.silent)
+                preprocess_data_bart(d, mode) for d in tqdm(data, disable=args.silent)
             ]
 
     def __len__(self):

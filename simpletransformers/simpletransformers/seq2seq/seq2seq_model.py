@@ -94,6 +94,7 @@ from simpletransformers.seq2seq.seq2seq_utils import (
     SimpleSummarizationDataset,
     load_hf_dataset,
 )
+from torch.nn import CrossEntropyLoss
 
 try:
     import wandb
@@ -134,7 +135,7 @@ class Seq2SeqModule(nn.Module):
         self.lm = language_model
 
     def forward(self, target_ids=None, lm_labels=None):
-        return self.lm(target_ids, labels=lm_labels)[0]
+        return self.lm(target_ids, labels=lm_labels)
 
     def save_pretrained(self, output_dir):
         self.lm.save_pretrained(output_dir)
@@ -379,6 +380,7 @@ class Seq2SeqModel:
         verbose=True,
         save_step_dense=-1,
         save_step_dense_interval=-1,
+        save_fine_step_list=None,
         **kwargs,
     ):
         """
@@ -428,7 +430,7 @@ class Seq2SeqModel:
 
         self._move_model_to_device()
 
-        train_dataset = self.load_and_cache_examples(train_data, verbose=verbose)
+        train_dataset = self.load_and_cache_examples(train_data, verbose=verbose, evaluate=False)
 
         os.makedirs(output_dir, exist_ok=True)
 
@@ -441,6 +443,7 @@ class Seq2SeqModel:
             verbose=verbose,
             save_step_dense=save_step_dense,
             save_step_dense_interval=save_step_dense_interval,
+            save_fine_step_list=save_fine_step_list,
             **kwargs,
         )
         
@@ -459,6 +462,7 @@ class Seq2SeqModel:
         verbose=True,
         save_step_dense=-1,
         save_step_dense_interval=-1,
+        save_fine_step_list=None,
         **kwargs,
     ):
         """
@@ -492,7 +496,7 @@ class Seq2SeqModel:
 
         if args.evaluate_during_training:
             eval_dataset = self.load_and_cache_examples(
-                eval_data, verbose=verbose
+                eval_data, verbose=verbose, evaluate=True
             )
             if self.distributed:
                 eval_sampler = DistributedSampler(eval_dataset, shuffle=True)
@@ -798,9 +802,9 @@ class Seq2SeqModel:
                 # print(inputs['lm_labels'][0])
                 if args.fp16:
                     with amp.autocast():
-                        loss = model(**inputs)
+                        loss = model(**inputs)[0]
                 else:
-                    loss = model(**inputs)
+                    loss = model(**inputs)[0]
 
                 current_epoch_losses[0] += loss.item()
                 steps_avg += 1
@@ -859,7 +863,25 @@ class Seq2SeqModel:
                                     }
                                 )
 
-                    if ((args.save_steps > 0) and (global_step % args.save_steps == 0)) or (save_step_dense>0 and global_step % save_step_dense_interval == 0 and global_step<=save_step_dense):
+                    def should_save_regular(global_step, args):
+                        return ((args.save_steps > 0) and (global_step % args.save_steps == 0))
+                    def should_save_dense(global_step, save_step_dense, save_step_dense_interval):
+                        return (save_step_dense>0 and global_step % save_step_dense_interval == 0 and global_step<=save_step_dense)
+                    def should_save_fine(global_step, args):
+                        if save_fine_step_list == None:
+                            return False
+                        fine_dense_phases = []
+                        for t in save_fine_step_list:
+                            if int(t) > args.max_steps:
+                                raise ValueError(f"Fine step {t} is out of the valid range (1, {args.max_steps}).")
+                            fine_dense_phases.append((int(t), int(t) + 25))
+                        
+                        for (start, end) in fine_dense_phases:
+                            if start <= global_step < end:
+                                return True
+                        return False
+                    
+                    if should_save_regular(global_step, args) or should_save_dense(global_step, save_step_dense, save_step_dense_interval) or should_save_fine(global_step, args):
                             # save/eval via step only when epoch number is less
                             output_dir_current = os.path.join(
                                 output_dir, "checkpoint-{}".format(global_step)
@@ -878,26 +900,25 @@ class Seq2SeqModel:
                                 )
                                 if show_running_loss:
                                     if args.wandb_project or self.is_sweeping:
-                                        wandb.log(
-                                            {
-                                                "Eval loss": results["eval_loss"],
-                                                "global_step": global_step,
-                                            }
-                                        )
+                                        for key in results:
+                                            wandb.log(
+                                                {
+                                                    f"eval_loss/{key}": results[key][0],
+                                                    f"eval_accuracy/{key}": results[key][1],
+                                                    "global_step": global_step,
+                                                }
+                                            )
                                 training_progress_scores["global_step"].append(global_step)
                                 training_progress_scores["epoch"].append(current_epoch)
                                 training_progress_scores["train_loss"].append(loss.item())
                                 for key in results:
-                                    training_progress_scores[key].append(results[key])
+                                    training_progress_scores[f"eval_loss-{key}"].append(results[key][0])
+                                    training_progress_scores[f"eval_acc-{key}"].append(results[key][1])
                                 report = pd.DataFrame(training_progress_scores)
                                 report.to_csv(
                                     os.path.join(output_dir, "training_progress_scores.csv"),
                                     index=False,
                                 )
-
-                                if (not self.distributed) and args.predict_during_training:
-                                    self.predict(test_data, output_dir_current, skip_model_moving=True)
-
                                 model.train()
 
                     # relation mean shift
@@ -935,13 +956,12 @@ class Seq2SeqModel:
                         **kwargs,
                     )
 
-                    print(results)
-
                     training_progress_scores["global_step"].append(global_step)
                     training_progress_scores["epoch"].append(epoch_number)
                     training_progress_scores["train_loss"].append(current_epoch_losses[0].cpu().item())
                     for key in results:
-                        training_progress_scores[key].append(results[key])
+                        training_progress_scores[f"eval_loss-{key}"].append(results[key][0])
+                        training_progress_scores[f"eval_acc-{key}"].append(results[key][1])
                     report = pd.DataFrame(training_progress_scores)
                     report.to_csv(
                         os.path.join(output_dir, "training_progress_scores.csv"),
@@ -955,7 +975,11 @@ class Seq2SeqModel:
                 training_progress_scores["global_step"].append(global_step)
                 training_progress_scores["epoch"].append(epoch_number)
                 training_progress_scores["train_loss"].append(current_epoch_losses[0].cpu().item())
-                training_progress_scores["eval_loss"].append(-1.0)
+                for key in training_progress_scores.keys():
+                    if "eval_loss" in key:
+                        training_progress_scores[key].append(-1.0)
+                    if "eval_acc" in key:
+                        training_progress_scores[key].append(-1.0)
                 report = pd.DataFrame(training_progress_scores)
                 report.to_csv(
                     os.path.join(output_dir, "training_progress_scores.csv"),
@@ -992,8 +1016,8 @@ class Seq2SeqModel:
 
         results = {}
 
-        LM_loss = torch.zeros(1).to(self.device)
-        nb_eval_steps = 0
+        LM_loss = dict()
+        LM_accuracy = dict()
         model.eval()
 
         # if args.n_gpu > 1:
@@ -1011,20 +1035,98 @@ class Seq2SeqModel:
             with torch.no_grad():
                 if self.args.fp16:
                     with amp.autocast():
-                        tmp_LM_loss = model(**inputs)
+                        output = model(**inputs)
+                        shifted_tmp_LM_logits = output["logits"][..., :-1, :].contiguous()
+                        predictions = torch.argmax(shifted_tmp_LM_logits, dim=-1)
+                        
+                        shifted_labels = inputs["lm_labels"][..., 1:].contiguous()
+                        batch_size, seq_len = shifted_labels.size()
+                        
+                        # Calculate CrossEntropyLoss per token
+                        loss_fct = CrossEntropyLoss(reduction="none")
+                        loss_per_token = loss_fct(shifted_tmp_LM_logits.view(-1, shifted_tmp_LM_logits.size(-1)), shifted_labels.view(-1))
+                        
+                        # Reshape back to [batch_size, sequence_length]
+                        loss_per_instance = loss_per_token.view(batch_size, seq_len)
+                        loss_mask = loss_per_instance != 0
+                        loss_mask = loss_mask.float()
+                        
+                        loss_per_instance = torch.sum(loss_per_instance * loss_mask, dim=1)
+                        token_num_per_instance = torch.sum(loss_mask, dim=1)
+                        
+                        loss_per_instance = loss_per_instance / token_num_per_instance
+                        
+                        # Calculate Accuracy per instance
+                        accuracy_mask = shifted_labels != -100
+                        
+                        correct_predictions = (predictions == shifted_labels) & accuracy_mask
+                        num_correct_per_instance = correct_predictions.sum(dim=1)
+                        
+                        num_valid_per_instance = accuracy_mask.sum(dim=1)
                 else:
-                    tmp_LM_loss = model(**inputs)
-                # if self.args.n_gpu > 1:
-                #     tmp_eval_loss = tmp_eval_loss.mean()
-                LM_loss[0] += tmp_LM_loss.item()
+                    output = model(**inputs)
+                    shifted_tmp_LM_logits = output["logits"][..., :-1, :].contiguous()
+                    predictions = torch.argmax(shifted_tmp_LM_logits, dim=-1)
+                    
+                    shifted_labels = inputs["lm_labels"][..., 1:].contiguous()
+                    batch_size, seq_len = shifted_labels.size()
+                    
+                    # Calculate CrossEntropyLoss per token
+                    loss_fct = CrossEntropyLoss(reduction="none")
+                    loss_per_token = loss_fct(shifted_tmp_LM_logits.view(-1, shifted_tmp_LM_logits.size(-1)), shifted_labels.view(-1))
+                    
+                    # Reshape back to [batch_size, sequence_length]
+                    loss_per_instance = loss_per_token.view(batch_size, seq_len)
+                    loss_mask = loss_per_instance != 0
+                    loss_mask = loss_mask.float()
+                    
+                    loss_per_instance = torch.sum(loss_per_instance * loss_mask, dim=1)
+                    token_num_per_instance = torch.sum(loss_mask, dim=1)
+                    
+                    loss_per_instance = loss_per_instance / token_num_per_instance
+                    
+                    # Calculate Accuracy per instance
+                    accuracy_mask = shifted_labels != -100
+                    
+                    correct_predictions = (predictions == shifted_labels) & accuracy_mask
+                    num_correct_per_instance = correct_predictions.sum(dim=1)
+                    
+                    num_valid_per_instance = accuracy_mask.sum(dim=1)
 
-            nb_eval_steps += 1
+                assert len(loss_per_instance) == len(batch["type"])
+                for loss, data_type in zip(loss_per_instance, batch["type"]):
+                    if data_type not in LM_loss:
+                        LM_loss[data_type] = [torch.zeros(1).to(self.device), torch.zeros(1).to(self.device)]
+                    LM_loss[data_type][0] = LM_loss[data_type][0] + 1
+                    LM_loss[data_type][1] = LM_loss[data_type][1] + loss
 
-        LM_loss = LM_loss/nb_eval_steps
+                assert len(num_correct_per_instance) == len(batch["type"])
+                for accuracy, token_num, data_type in zip(num_correct_per_instance, num_valid_per_instance, batch["type"]):
+                    if data_type not in LM_accuracy:
+                        LM_accuracy[data_type] = [torch.zeros(1).to(self.device), torch.zeros(1).to(self.device)]
+                    LM_accuracy[data_type][0] = LM_accuracy[data_type][0] + token_num.item()
+                    LM_accuracy[data_type][1] = LM_accuracy[data_type][1] + accuracy
+        
+        for key in LM_loss.keys():
+            LM_loss[key][1] = LM_loss[key][1] / LM_loss[key][0]
+        
+        for key in LM_accuracy.keys():
+            LM_accuracy[key][1] = LM_accuracy[key][1] / LM_accuracy[key][0]
+
         if self.distributed:
-            dist.all_reduce(LM_loss, op=dist.ReduceOp.AVG)
-
-        results["eval_loss"] = LM_loss[0].cpu().item()
+            keys = sorted(LM_loss.keys())
+            for key in keys:
+                num_tensor, loss_tensor = LM_loss[key]
+                dist.all_reduce_multigpu(num_tensor, op=dist.ReduceOp.SUM)
+                dist.all_reduce_multigpu(loss_tensor, op=dist.ReduceOp.AVG)
+            for key in keys:
+                num_tensor, acc_tensor = LM_accuracy[key]
+                dist.all_reduce_multigpu(num_tensor, op=dist.ReduceOp.SUM)
+                dist.all_reduce_multigpu(acc_tensor, op=dist.ReduceOp.AVG)
+        
+        assert LM_loss.keys() == LM_accuracy.keys()
+        for key in LM_loss.keys():
+            results[key] = [LM_loss[key][1].cpu().item(), LM_accuracy[key][1].cpu().item()]
 
         return results
 
@@ -1194,7 +1296,20 @@ class Seq2SeqModel:
         training_progress_scores = {
             "global_step": [],
             "epoch": [],
-            "eval_loss": [],
+            "eval_loss-id_atomic": [],
+            "eval_loss-ood_atomic": [],
+            "eval_loss-train_inferred": [],
+            "eval_loss-test_inferred_iid": [],
+            "eval_loss-test_inferred_ood": [],
+            "eval_loss-test_OI": [],
+            "eval_loss-test_IO": [],
+            "eval_acc-id_atomic": [],
+            "eval_acc-ood_atomic": [],
+            "eval_acc-train_inferred": [],
+            "eval_acc-test_inferred_iid": [],
+            "eval_acc-test_inferred_ood": [],
+            "eval_acc-test_OI": [],
+            "eval_acc-test_IO": [],
             "train_loss": [],
             **extra_metrics,
         }
