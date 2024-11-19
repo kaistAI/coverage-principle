@@ -95,6 +95,8 @@ from simpletransformers.seq2seq.seq2seq_utils import (
     load_hf_dataset,
 )
 from torch.nn import CrossEntropyLoss
+import subprocess
+import shutil
 
 try:
     import wandb
@@ -874,7 +876,7 @@ class Seq2SeqModel:
                         for t in save_fine_step_list:
                             if int(t) > args.max_steps:
                                 raise ValueError(f"Fine step {t} is out of the valid range (1, {args.max_steps}).")
-                            fine_dense_phases.append((int(t), int(t) + 25))
+                            fine_dense_phases.append((int(t), int(t) + 1000))
                         
                         for (start, end) in fine_dense_phases:
                             if start <= global_step < end:
@@ -1117,12 +1119,12 @@ class Seq2SeqModel:
             keys = sorted(LM_loss.keys())
             for key in keys:
                 num_tensor, loss_tensor = LM_loss[key]
-                dist.all_reduce_multigpu(num_tensor, op=dist.ReduceOp.SUM)
-                dist.all_reduce_multigpu(loss_tensor, op=dist.ReduceOp.AVG)
+                dist.all_reduce(num_tensor, op=dist.ReduceOp.SUM)
+                dist.all_reduce(loss_tensor, op=dist.ReduceOp.AVG)
             for key in keys:
                 num_tensor, acc_tensor = LM_accuracy[key]
-                dist.all_reduce_multigpu(num_tensor, op=dist.ReduceOp.SUM)
-                dist.all_reduce_multigpu(acc_tensor, op=dist.ReduceOp.AVG)
+                dist.all_reduce(num_tensor, op=dist.ReduceOp.SUM)
+                dist.all_reduce(acc_tensor, op=dist.ReduceOp.AVG)
         
         assert LM_loss.keys() == LM_accuracy.keys()
         for key in LM_loss.keys():
