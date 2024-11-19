@@ -5,14 +5,91 @@ from tqdm import tqdm
 import os
 from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
 import logging
+import numpy as np
+from collections import defaultdict
+import random
+
+def deduplicate_vectors(results):
+    """
+    Deduplicate vectors within each group and track removal statistics.
+    
+    Args:
+        results (dict): Dictionary containing groups of results
+        
+    Returns:
+        tuple: (deduplicated_results, dedup_stats)
+    """
+    dedup_stats = defaultdict(lambda: defaultdict(int))
+    deduplicated_results = {
+        "train_inferred": [],
+        "test_inferred_iid": [],
+        "test_inferred_ood": []
+    }
+    
+    def vectors_equal(v1, v2):
+        """Compare two vectors for equality with numerical tolerance."""
+        if v1 is None or v2 is None:
+            return v1 is None and v2 is None
+        return np.allclose(np.array(v1), np.array(v2), rtol=1e-5, atol=1e-8)
+    
+    def get_vector_key(hidden_state):
+        """Create a tuple of vectors from a hidden state."""
+        vectors = []
+        if 'embedding' in hidden_state:
+            vectors.append(tuple(hidden_state['embedding']))
+        if 'post_attention' in hidden_state and hidden_state['post_attention'] is not None:
+            vectors.append(tuple(hidden_state['post_attention']))
+        if 'post_mlp' in hidden_state and hidden_state['post_mlp'] is not None:
+            vectors.append(tuple(hidden_state['post_mlp']))
+        return tuple(vectors)
+    
+    for group_name, instances in results.items():
+        seen_vectors = defaultdict(set)  # (layer, position) -> set of vector tuples
+        logging.info(f"performing dedup for group {group_name}")
+        
+        for instance in tqdm(instances):
+            is_duplicate = False
+            
+            # Track duplicates for each hidden state
+            for hidden_state in instance['hidden_states']:
+                layer = hidden_state['layer']
+                pos = hidden_state['position']
+                vector_key = get_vector_key(hidden_state)
+                
+                # Check if we've seen this vector before
+                is_vec_duplicate = False
+                for seen_vec in seen_vectors[(layer, pos)]:
+                    if all(vectors_equal(v1, v2) for v1, v2 in zip(vector_key, seen_vec)):
+                        is_vec_duplicate = True
+                        dedup_stats[group_name][f"layer{layer}_pos{pos}"] += 1  # Convert tuple to string key
+                        break
+                
+                if is_vec_duplicate:
+                    is_duplicate = True
+                    break
+                else:
+                    seen_vectors[(layer, pos)].add(vector_key)
+            
+            # If instance is not a duplicate, add it to deduplicated results
+            if not is_duplicate:
+                deduplicated_results[group_name].append(instance)
+    
+    # Convert defaultdict to regular dict with string keys
+    final_stats = {}
+    for group_name, stats in dedup_stats.items():
+        final_stats[group_name] = dict(stats)  # Convert inner defaultdict to regular dict
+    
+    return deduplicated_results, final_stats
 
 def setup_logging(debug_mode):
     level = logging.DEBUG if debug_mode else logging.ERROR
     logging.basicConfig(level=level, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def load_dataset(dataset_path):
+def load_dataset(dataset_path, debug):
     with open(dataset_path, 'r') as f:
         dataset = json.load(f)
+        if debug:
+            dataset = random.sample(dataset, 200)
     logging.debug(f"Loaded {len(dataset)} instances from {dataset_path}")
     return dataset
 
@@ -126,7 +203,7 @@ def main():
     model.config.pad_token_id = model.config.eos_token_id
     logging.debug("Model and tokenizer loaded successfully")
     
-    dataset = load_dataset(args.dataset)
+    dataset = load_dataset(args.dataset, args.debug)
     layer_pos_pairs = eval(args.layer_pos_pairs)
     logging.debug(f"Layer position pairs: {layer_pos_pairs}")
     
@@ -167,16 +244,37 @@ def main():
         else:
             logging.error(f"Unknown instance type: {instance['type']}")
 
+    # After processing all instances but before saving:
+    deduplicated_results, dedup_stats = deduplicate_vectors(results)
+    logging.warning(f"dedup_stats: {dedup_stats}")
+    
+    # Save deduplicated results
     os.makedirs(args.save_dir, exist_ok=True)
     save_path = os.path.join(args.save_dir, args.save_fname)
-    with open(save_path, 'w') as f:
-        json.dump(results, f)
     
-    logging.info(f"Analysis results saved to {save_path}")
-    logging.info(f"Number of results per type:")
-    for key, value in results.items():
+    # Save main results
+    with open(save_path, 'w') as f:
+        json.dump(deduplicated_results, f)
+    
+    # Save deduplication statistics
+    stats_save_path = os.path.join(args.save_dir, f"dedup_stats_{args.save_fname}")
+    with open(stats_save_path, 'w') as f:
+        json.dump(dedup_stats, f)
+    
+    # Log deduplication statistics
+    logging.info(f"Deduplication statistics:")
+    for group_name, stats in dedup_stats.items():
+        logging.info(f"\nGroup: {group_name}")
+        for key, count in sorted(stats.items()):
+            layer, pos = key.replace('layer', '').split('_pos')
+            logging.info(f"  Layer {layer}, Position {pos}: Removed {count} duplicates")
+    
+    logging.info(f"\nFinal counts after deduplication:")
+    for key, value in deduplicated_results.items():
         logging.info(f"  {key}: {len(value)}")
-    logging.info(f"Number of id_atomic instances skipped: {skipped_count}")
+    
+    logging.info(f"\nResults saved to {save_path}")
+    logging.info(f"Deduplication statistics saved to {stats_save_path}")
 
 if __name__ == "__main__":
     main()
