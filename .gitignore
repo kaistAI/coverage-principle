@@ -1,4 +1,5 @@
 saved_models/
+trained_checkpoints/
 __pycache__/
 runs/
 cache_dir/
