@@ -10,6 +10,40 @@ from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import cosine
 from scipy.linalg import svd
+from transformers import AutoModelForCausalLM
+import torch
+
+def load_model_and_get_unembedding(model_path):
+    model = AutoModelForCausalLM.from_pretrained(model_path)
+    unembedding = model.lm_head.weight.detach().numpy()
+    return unembedding
+
+def perform_svd_on_unembedding(unembedding):
+    U, S, Vt = np.linalg.svd(unembedding, full_matrices=False)
+    return U, S, Vt
+
+def compute_similarities(vectors, singular_vectors):
+    similarities = []
+    for vector in vectors:
+        sim = np.abs(np.dot(vector, singular_vectors.T))
+        similarities.append(sim)
+    return np.array(similarities)
+
+def plot_unembedding_analysis(S, similarities, save_path):
+    plt.figure(figsize=(12, 8))
+    plt.plot(range(1, len(S) + 1), S, 'b-', linewidth=2, label='Singular Values')
+    
+    for i, sim in enumerate(similarities):
+        plt.plot(range(1, len(sim) + 1), sim, alpha=0.5, label=f'Vector {i+1}')
+    
+    plt.xlabel('Singular Vector Index')
+    plt.ylabel('Value / Similarity')
+    plt.title('Unembedding Matrix Analysis')
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.yscale('log')
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()
 
 def perform_ssa(vector_group, n_components=20):
     # Ensure we have a 2D matrix
@@ -17,24 +51,55 @@ def perform_ssa(vector_group, n_components=20):
     if matrix.ndim == 1:
         matrix = matrix.reshape(1, -1)
     
-    # Perform SVD
-    U, s, Vt = svd(matrix, full_matrices=False)
-    
-    # Return the singular values (spectrum)
-    return s[:n_components]
+    try:
+        # Perform SVD
+        U, s, Vt = svd(matrix, full_matrices=False)
+        
+        # Return the singular values (spectrum)
+        return s[:n_components]
+    except np.linalg.LinAlgError:
+        logging.warning(f"SVD did not converge for matrix of shape {matrix.shape}")
+        return np.zeros(n_components)
 
+def normalize_vectors(vectors):
+    return vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
+
+# Modify the sample_and_perform_ssa function to use normalized vectors
 def sample_and_perform_ssa(vector_groups, sample_size=1000, n_components=20):
+    np.random.seed(42)
     ssa_results = {}
+    sample_size = min([sample_size] + [len(v) for v in vector_groups.values()])
+    print(f"sample_size: {sample_size}")
     for key, vectors in vector_groups.items():
         if len(vectors) >= sample_size:
             sampled_vectors = vectors[np.random.choice(len(vectors), sample_size, replace=False)]
         else:
             sampled_vectors = vectors[np.random.choice(len(vectors), sample_size, replace=True)]
         
-        spectrum = perform_ssa(sampled_vectors, n_components)
+        normalized_vectors = normalize_vectors(sampled_vectors)
+        spectrum = perform_ssa(normalized_vectors, n_components)
         ssa_results[str(key)] = spectrum.tolist()
     
     return ssa_results
+
+def plot_ssa_comparison(ssa_results, save_dir):
+    vector_types = ['embedding', 'post_attention', 'post_mlp']
+    for vector_type in vector_types:
+        plt.figure(figsize=(12, 8))
+        for key, spectrum in ssa_results.items():
+            if vector_type in key:
+                label = '_'.join(key.split(', ')[:3])  # Create label from layer, position, and data type
+                plt.plot(range(1, len(spectrum) + 1), spectrum, '-', label=label)
+        plt.xlabel('Component')
+        plt.ylabel('Singular Value')
+        plt.title(f'Singular Spectrum Comparison for {vector_type}')
+        plt.yscale('log')
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.tight_layout()
+        save_path = os.path.join(save_dir, f'ssa_comparison_{vector_type}.png')
+        plt.savefig(save_path)
+        plt.close()
+        logging.info(f"SSA comparison plot for {vector_type} saved to {save_path}")
 
 def perform_pca_and_tsne_visualize(vector_groups, save_dir):
     for (layer, position) in set((l, p) for l, p, _, _ in vector_groups.keys()):
@@ -125,6 +190,8 @@ def main():
     parser.add_argument("--save_fname", required=True, help="Filename to save the analysis results")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode for verbose output")
     parser.add_argument("--debug_samples", type=int, default=100, help="Number of samples to process in debug mode")
+    parser.add_argument("--model_path", required=True, help="Path to the GPT-2 model checkpoint")
+    parser.add_argument("--sample_size", type=int, default=5, help="Number of vectors to sample for unembedding analysis")
     
     args = parser.parse_args()
     
@@ -160,6 +227,32 @@ def main():
     for key in vector_groups:
         vector_groups[key] = np.array(vector_groups[key])
     
+    # Load model and get unembedding matrix
+    # unembedding = load_model_and_get_unembedding(args.model_path)
+    
+    # Perform SVD on unembedding matrix
+    # U, S, Vt = perform_svd_on_unembedding(unembedding)
+    
+    # Sample vectors and compute similarities
+    # unembedding_analysis = {}
+    # for key, vectors in vector_groups.items():
+    #     if len(vectors) >= args.sample_size:
+    #         sampled_vectors = vectors[np.random.choice(len(vectors), args.sample_size, replace=False)]
+    #     else:
+    #         sampled_vectors = vectors[np.random.choice(len(vectors), args.sample_size, replace=True)]
+        
+    #     similarities = compute_similarities(sampled_vectors, Vt.T)
+    #     unembedding_analysis[str(key)] = similarities.tolist()
+    
+    # Plot unembedding analysis
+    # unembedding_plot_dir = os.path.join(args.save_dir, 'unembedding_plots')
+    # os.makedirs(unembedding_plot_dir, exist_ok=True)
+    
+    # for key, similarities in unembedding_analysis.items():
+    #     save_path = os.path.join(unembedding_plot_dir, f'unembedding_analysis_{key.replace(", ", "_")}.png')
+    #     plot_unembedding_analysis(S, similarities, save_path)
+    #     logging.info(f"Unembedding analysis plot saved to {save_path}")
+    
     # Perform SSA
     ssa_results = sample_and_perform_ssa(vector_groups, sample_size=1000, n_components=20)
     logging.info(f"Number of SSA results: {len(ssa_results)}")
@@ -179,6 +272,8 @@ def main():
         plt.close()
         logging.info(f"SSA spectrum plot saved to {save_path}")
     
+    plot_ssa_comparison(ssa_results, ssa_plot_dir)
+    
     # Perform PCA and t-SNE visualizations
     vis_save_dir = os.path.join(args.save_dir, 'visualizations')
     os.makedirs(vis_save_dir, exist_ok=True)
@@ -194,15 +289,18 @@ def main():
     
     logging.info(f"Number of similarity results: {len(similarities)}")
     logging.info(f"Number of magnitude results: {len(magnitudes)}")
-    
-    # Save results
-    os.makedirs(args.save_dir, exist_ok=True)
+
+    # Save results including unembedding analysis
     save_path = os.path.join(args.save_dir, args.save_fname)
     with open(save_path, 'w') as f:
         json.dump({
             "average_similarities": similarities,
-            "average_magnitudes": magnitudes
+            "average_magnitudes": magnitudes,
+            "ssa_results": ssa_results,
+            # "unembedding_analysis": unembedding_analysis
         }, f, indent=2)
+    
+    logging.info(f"Analysis results saved to {save_path}")
     
     logging.info(f"Analysis results saved to {save_path}")
 
