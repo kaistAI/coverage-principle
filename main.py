@@ -5,6 +5,7 @@ import json
 
 from simpletransformers.seq2seq import Seq2SeqModel
 from utils import read_data_source_target
+import sys
 
 
 def main():
@@ -71,9 +72,9 @@ def main():
     parser.add_argument('--rank', default=-1, type=int, help='node rank for distributed training')
     parser.add_argument('--dist-url', default='env://', type=str, help='url used to set up distributed training')
     parser.add_argument('--dist-backend', default='nccl', type=str, help='distributed backend')
-    # parser.add_argument('--local_rank', default=-1, type=int, help='local rank for distributed training')
+    parser.add_argument('--local_rank', default=-1, type=int, help='local rank for distributed training')
     # This is for updated Pytorch
-    parser.add_argument('--local-rank', default=-1, type=int, help='local rank for distributed training')
+    # parser.add_argument('--local-rank', default=-1, type=int, help='local rank for distributed training')
     parser.add_argument('--gpu', default=None, type=int)
     
     # wandb config
@@ -197,7 +198,7 @@ def main():
     # Train the model
     if args.do_train:
         model.train_model(train_data=train_df, eval_data=eval_df, test_data=test_df, output_dir=args.output_dir,
-                          save_step_dense=args.save_step_dense, save_step_dense_interval=args.save_step_dense_interval, save_fine_step_list=args.save_fine_step_list)
+                          save_step_dense=args.save_step_dense, save_step_dense_interval=args.save_step_dense_interval, save_fine_step_list=args.save_fine_step_list, eval_key=list(set(eval_df["type"])))
 
     # Evaluate the model
     # if args.do_eval:
@@ -215,4 +216,8 @@ def main():
 
 
 if __name__ == '__main__':
+    # log_file = open("output.log", "w")
+    # # Redirect stdout and stderr to the file
+    # sys.stdout = log_file
+    # sys.stderr = log_file
     main()

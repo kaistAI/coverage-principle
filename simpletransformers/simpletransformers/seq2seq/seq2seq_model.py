@@ -1050,7 +1050,7 @@ class Seq2SeqModel:
                         
                         # Reshape back to [batch_size, sequence_length]
                         loss_per_instance = loss_per_token.view(batch_size, seq_len)
-                        loss_mask = loss_per_instance != 0
+                        loss_mask = shifted_labels != -100
                         loss_mask = loss_mask.float()
                         
                         loss_per_instance = torch.sum(loss_per_instance * loss_mask, dim=1)
@@ -1294,24 +1294,14 @@ class Seq2SeqModel:
         return SimpleSummarizationDataset(lm_tokenizer, self.args, data, mode)
 
     def _create_training_progress_scores(self, **kwargs):
-        extra_metrics = {key: [] for key in kwargs}
+        extra_metrics = dict()
+        for key in kwargs["eval_key"]:
+            extra_metrics[f"eval_loss-{key}"] = []
+        for key in kwargs["eval_key"]:
+            extra_metrics[f"eval_acc-{key}"] = []
         training_progress_scores = {
             "global_step": [],
             "epoch": [],
-            "eval_loss-id_atomic": [],
-            "eval_loss-ood_atomic": [],
-            "eval_loss-train_inferred": [],
-            "eval_loss-test_inferred_iid": [],
-            "eval_loss-test_inferred_ood": [],
-            "eval_loss-test_OI": [],
-            "eval_loss-test_IO": [],
-            "eval_acc-id_atomic": [],
-            "eval_acc-ood_atomic": [],
-            "eval_acc-train_inferred": [],
-            "eval_acc-test_inferred_iid": [],
-            "eval_acc-test_inferred_ood": [],
-            "eval_acc-test_OI": [],
-            "eval_acc-test_IO": [],
             "train_loss": [],
             **extra_metrics,
         }
