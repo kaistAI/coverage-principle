@@ -39,7 +39,7 @@ def main():
 
     all_atomic = set()     # (h,r,t)
     atomic_dict = dict()   # (h,r) -> t
-    with open("data/{}/train.json".format(dataset)) as f:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", dataset, "train.json")) as f:
         train_items = json.load(f)
     for item in tqdm(train_items):
         temp = item['target_text'].strip("><").split("><")
@@ -69,7 +69,7 @@ def main():
             h2rt_train[h] = []
         h2rt_train[h].append((r,t))
 
-    with open("data/{}/test.json".format(dataset)) as f:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", dataset, "test.json")) as f:
         pred_data = json.load(f)
     d = dict()
     for item in pred_data:
