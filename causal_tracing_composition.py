@@ -33,9 +33,12 @@ def main():
     # Sanity check for composition & comparison
     assert "comparison" not in args.model_dir
     
-    dataset = args.model_dir.split("/")[-1].split("_")[0]
+    if args.model_dir.split("/")[-1] == "":
+        dataset = args.model_dir.split("/")[-2].split("_")[0]
+    else:
+        dataset = args.model_dir.split("/")[-1].split("_")[0]
 
-    device = torch.device('cuda:1')
+    device = torch.device('cuda:0')
 
     all_atomic = set()     # (h,r,t)
     atomic_dict = dict()   # (h,r) -> t

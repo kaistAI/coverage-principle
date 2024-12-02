@@ -2,56 +2,57 @@ import argparse
 import os
 import json
 import torch
-from transformers import GPT2LMHeadModel, GPT2Tokenizer
 from tqdm import tqdm
+from transformers import GPT2Tokenizer, GPT2LMHeadModel
+import torch.nn.functional as F
 import matplotlib.pyplot as plt
 
 
+def calculate_entropy(logits):
+    
+    # Only calculate tail entity's logit
+    logits = logits[:,-1,:]
+    
+    probabilities = F.softmax(logits, dim=-1)
+    
+    # Calculate entropy
+    entropy = -torch.sum(probabilities * torch.log(probabilities + 1e-9), dim=-1)  # Avoid log(0)
+    total_entropy = torch.sum(entropy).cpu().item()
+    return total_entropy
+
 
 def main(args):
-    
     if args.model_dir.split("/")[-1] == "":
         dataset = args.model_dir.split("/")[-2].split("_")[0]
     else:
         dataset = args.model_dir.split("/")[-1].split("_")[0]
-        
+    
     with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", dataset, "test.json")) as f:
         test_data = json.load(f)
         
-    test_dict = {
-        "Train(ID)_atomic": [],
-        "Train(ID)_inferred": [],
-        "Test(ID)": [],
-        "Test(OOD)": []
-    }
+    test_dict = {}
     
     for item in test_data:
         t = item['type']
-        if t in ["id_atomic", "ood_atomic"]:
-            test_dict["Train(ID)_atomic"].append(item)
-        elif t == "train_inferred":
-            test_dict["Train(ID)_inferred"].append(item)
-        elif t == "test_inferred_iid":
-            test_dict["Test(ID)"].append(item)
-        elif t == "test_inferred_ood":
-            test_dict["Test(OOD)"].append(item)
-        else:
-            pass
-
+        if t not in test_dict:
+            test_dict[t] = []
+        test_dict[t].append(item)
+        
     for key, datas in test_dict.items():
         print(f"{key}: {len(datas)}")
         
     all_checkpoints = [checkpoint for checkpoint in os.listdir(args.model_dir) if checkpoint.startswith("checkpoint")]
     all_checkpoints.sort(key=lambda var: int(var.split("-")[1]))
+    all_checkpoints = all_checkpoints
     print(all_checkpoints)
     
     device = torch.device('cuda:0')
-    # device = torch.device('cpu')
     BATCH_SIZE = 65536
     
-    all_acc = dict()
+    
+    all_entropy = dict()
     for key in test_dict.keys():
-        all_acc[key] = []
+        all_entropy[key] = []
     
     for checkpoint in tqdm(all_checkpoints):
         print("now checkpoint", checkpoint)
@@ -62,57 +63,61 @@ def main(args):
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.pad_token_id = tokenizer.eos_token_id
         model.config.pad_token_id = model.config.eos_token_id
-
+        
         for key, datas in test_dict.items():
-            type_accuracy = 0.0
+            type_entropy_avg = 0.0
             for i in range(0, len(datas), BATCH_SIZE):
                 batch = datas[i:i+BATCH_SIZE]
                 queries = [data['input_text'] for data in batch]
                 labels = [data['target_text'] for data in batch]
-                decoder_temp = tokenizer(queries, return_tensors="pt", padding=True)
-                decoder_input_ids = decoder_temp["input_ids"]
-                decoder_input_ids = decoder_input_ids.to(device)
+                tokenized_output = tokenizer(queries, return_tensors="pt", padding=True)
+                tokenized_input_ids, attention_mask = tokenized_output["input_ids"], tokenized_output["attention_mask"]
+                tokenized_input_ids, attention_mask = tokenized_input_ids.to(device), attention_mask.to(device)
                 
                 with torch.no_grad():
-                    token_id_outputs = model.generate(
-                        input_ids=decoder_input_ids,
-                        max_new_tokens=2,
+                    outputs = model(
+                        input_ids=tokenized_input_ids,
+                        attention_mask=attention_mask
                     )
-                token_outputs = [output.replace(" ", "") for output in tokenizer.batch_decode(token_id_outputs)]
-                for label, prediction in zip(labels, token_outputs):
-                    if label == prediction:
-                        type_accuracy += 1
-                        
-            type_accuracy = (type_accuracy / len(datas))
-            all_acc[key].append(type_accuracy)
-            
-    print(all_acc)
+                    logits = outputs.logits
 
+                # Calculate entropy for the logits
+                batch_entropy = calculate_entropy(logits)
+                type_entropy_avg += batch_entropy
+            type_entropy_avg = type_entropy_avg / len(datas)
+            all_entropy[key].append(type_entropy_avg)
+            
+    print(all_entropy)
+    
     # Plotting the accuracy values in the same plot
     plt.figure(figsize=(10, 6))
     x_values = [int(checkpoint_step.split("-")[-1]) for checkpoint_step in all_checkpoints]
+    
+    colors = [
+        "black", "darkgray", "orange", "yellow",
+        "teal", "cyan", "darkblue", "brown", "red"
+    ]
 
     # Plot each list with different markers and labels
-    plt.plot(x_values, all_acc["Train(ID)_atomic"], label="Train(ID)_Atomic", linestyle='-', marker='o')
-    plt.plot(x_values, all_acc["Train(ID)_inferred"], label="Train(ID)_Inferred", linestyle='-', marker='x')
-    plt.plot(x_values, all_acc["Test(ID)"], label="Test(ID)", linestyle='-', marker='s')
-    plt.plot(x_values, all_acc["Test(OOD)"], label="Test(OOD)", linestyle='-', marker='^')
+    for i, key in enumerate(all_entropy.keys()):
+        plt.plot(x_values, all_entropy[key], label=f"{key}", color=colors[i], marker="o")
 
     # Set x-axis to log scale and customize ticks
-    plt.xscale("log")
-    plt.xticks([1250, 12500], labels=[f"{int(tick)}" for tick in [1250, 12500]])
+    # plt.xscale("log")
+    plt.xscale('symlog')
+    plt.xticks([1250, 12500, 30000], labels=[f"{int(tick)}" for tick in [1250, 12500, 30000]])
+    
 
     # Labeling the plot
     plt.xlabel("Step (Log Scale)")
-    plt.ylabel("Accuracy")
-    plt.legend(loc="center right")
+    plt.ylabel("Entropy")
+    plt.legend(loc="upper right")
     plt.grid(True)
     plt.tight_layout()
 
     # Display the plot
-    plt.savefig(os.path.join(args.model_dir, "accuracy.png"), format="png", dpi=300)
-
-
+    plt.savefig(os.path.join(args.model_dir, "entropy_for_nonsense.png"), format="png", dpi=300)
+    
 
 if __name__=="__main__":
     
@@ -122,3 +127,6 @@ if __name__=="__main__":
     args = parser.parse_args()
     
     main(args)
+    
+
+

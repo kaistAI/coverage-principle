@@ -41,7 +41,7 @@ def main(args):
 
     for checkpoint in tqdm(all_checkpoints):
         print("now checkpoint", checkpoint)
-        model_path = os.path.join(args.args.model_dir, checkpoint)
+        model_path = os.path.join(args.model_dir, checkpoint)
         model = GPT2LMHeadModel.from_pretrained(model_path).to(device)
         tokenizer = GPT2Tokenizer.from_pretrained(model_path)
         tokenizer.padding_side = "left" 
@@ -147,6 +147,10 @@ def main(args):
                 ax1.plot(indices, probs, label=f"{key}", color=colors[i], marker="o")
                 for _, index in largest_token_n_index_list:
                     ax1.axvline(index, color='black', linestyle='--', linewidth=0.2)
+                lower_top_probs_for_data_type = [data for data in top_probs_for_data_type[key] if data[0] <= largest_prob]
+                indices = [data[1] for data in lower_top_probs_for_data_type]
+                probs = [data[0] for data in lower_top_probs_for_data_type]
+                ax2.plot(indices, probs, label=f"{key}", color=colors[i], marker="o")
 
         fig.legend(loc="upper left", bbox_to_anchor=(0.13,0.88))
         plt.savefig(os.path.join(save_dir, f"{checkpoint}.png"), format="png", dpi=300)
