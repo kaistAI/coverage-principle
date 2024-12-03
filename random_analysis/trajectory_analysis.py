@@ -135,7 +135,7 @@ def parse_arguments():
     parser.add_argument('--num_workers', type=int, default=16, help='Number of worker processes for multiprocessing.')
     parser.add_argument('--num_samples', type=int, default=5, help='Number of sample trajectories to visualize.')
     parser.add_argument('--lyap_dims', type=int, default=768, help='Number of dimensions to use for Lyapunov exponent computation.')
-    parser.add_argument('--pca_components', type=int, default=10, help='Number of PCA components to retain.')
+    parser.add_argument('--pca_components', type=int, default=16, help='Number of PCA components to retain.')
     parser.add_argument('--plot_only', action='store_true')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode (load only 10 trajectories per group).')
     return parser.parse_args()
@@ -551,7 +551,7 @@ def rqa_worker(args):
 
     return (datapoint_id, rqa_measures)
 
-def generate_sample_recurrence_plots(group_vtype_data, pca, group, vtype, output_dir):
+def generate_sample_recurrence_plots(group_vtype_data, pca, group, vtype, output_dir, pca_components, global_threshold):
     """
     Generate sample recurrence plots for a group and vector type.
 
@@ -576,7 +576,7 @@ def generate_sample_recurrence_plots(group_vtype_data, pca, group, vtype, output
         traj_pca = pca.transform(traj)
 
         # Use the first 'n_components' principal components
-        n_components = 128  # Adjust as needed
+        n_components = pca_components  # Adjust as needed
         time_series_data = traj_pca[:, :n_components]
 
         # Create an EmbeddedSeries object for multivariate data
@@ -586,7 +586,7 @@ def generate_sample_recurrence_plots(group_vtype_data, pca, group, vtype, output
         settings = Settings(
             time_series,
             analysis_type=Classic(),
-            neighbourhood=FixedRadius(5),  # Adjust radius as needed
+            neighbourhood=FixedRadius(global_threshold),  # Adjust radius as needed
             similarity_measure=EuclideanMetric(),
             theiler_corrector=1
         )
@@ -649,7 +649,9 @@ def rqa_analysis(trajectories, output_dir, groups, vector_types, num_workers, pc
                 all_distances.extend(dist_matrix.flatten())
 
     # Determine the global threshold
-    global_threshold = np.mean(all_distances) * 0.1  # Or choose a fixed value or percentile
+    global_threshold = np.mean(all_distances) * 0.2  # Or choose a fixed value or percentile
+    print(f"PCA components: {pca_components}")
+    print(f"global threshold: {global_threshold}")
 
     # Now proceed with RQA analysis for each group and vector type
     for group in groups:
@@ -662,7 +664,7 @@ def rqa_analysis(trajectories, output_dir, groups, vector_types, num_workers, pc
                 continue
 
             # Generate sample recurrence plots
-            generate_sample_recurrence_plots(group_vtype_data, pca, group, vtype, output_dir)
+            generate_sample_recurrence_plots(group_vtype_data, pca, group, vtype, output_dir, pca_components, global_threshold)
 
             if plot_only:
                 continue
