@@ -4,7 +4,7 @@ import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from itertools import cycle
 
-def run_collect_vectors(ckpt, save_dir, save_fname, device, base_dir):
+def run_collect_vectors(ckpt, save_dir, save_fname, device, base_dir, dataset):
     """
     Executes the collect_vectors.py script with specified arguments.
 
@@ -18,7 +18,7 @@ def run_collect_vectors(ckpt, save_dir, save_fname, device, base_dir):
     Returns:
         tuple: (checkpoint_path, success, error_message)
     """
-    dataset_path = os.path.join(base_dir, "data/composition.2000.200.9.0/test_wid.json")
+    dataset_path = os.path.join(base_dir, dataset)
     layer_pos_pairs = "[(5,1)]"
 
     command = [
@@ -28,7 +28,8 @@ def run_collect_vectors(ckpt, save_dir, save_fname, device, base_dir):
         "--layer_pos_pairs", layer_pos_pairs,
         "--save_dir", save_dir,
         "--save_fname", save_fname,
-        "--device", device
+        "--device", device,
+        "--no_deduplicate"
     ]
 
     try:
@@ -45,7 +46,9 @@ def main():
     parser.add_argument("--save_dir_base", required=False, help="Base directory to save the analysis results")
     parser.add_argument("--save_fname_pattern", default="composition_{}.json", help="Filename pattern for saving results (use {} for step)")
     parser.add_argument("--device_ids", nargs='+', default=["cuda:0", "cuda:1", "cuda:2", "cuda:3"], help="List of GPU device IDs to use")
+    # parser.add_argument("--device_ids", nargs='+', default=["cuda:0"], help="List of GPU device IDs to use")
     parser.add_argument("--max_workers_per_gpu", type=int, default=10, help="Maximum number of parallel workers per GPU")
+    parser.add_argument("--dataset", type=str, default="data/composition.2000.200.9.0/test_wid.json")
     args = parser.parse_args()
 
     base_dir = args.base_dir
@@ -55,6 +58,7 @@ def main():
     save_fname_pattern = args.save_fname_pattern
     device_ids = args.device_ids
     max_workers_per_gpu = args.max_workers_per_gpu
+    dataset = args.dataset
 
     # List all checkpoint directories
     checkpoints = sorted([
@@ -91,7 +95,7 @@ def main():
         save_fname = save_fname_pattern.format(step)
         save_dir = save_dir_base  # All results saved in the same directory
 
-        future = executor.submit(run_collect_vectors, ckpt, save_dir, save_fname, gpu, base_dir)
+        future = executor.submit(run_collect_vectors, ckpt, save_dir, save_fname, gpu, base_dir, dataset)
         futures.append(future)
 
     # Monitor the progress of the tasks
@@ -101,6 +105,7 @@ def main():
             print(f"[SUCCESS] Processed checkpoint: {ckpt}")
         else:
             print(f"[FAILURE] Checkpoint: {ckpt}, Error: {error}")
+            assert False
 
     # Shutdown all executors
     for executor_info in executors:

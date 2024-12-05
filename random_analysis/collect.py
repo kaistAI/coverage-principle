@@ -20,7 +20,7 @@ def deduplicate_vectors(results):
         tuple: (deduplicated_results, dedup_stats)
     """
     dedup_stats = defaultdict(lambda: defaultdict(int))
-    deduplicated_results = defaultdict(list)  # Changed to defaultdict
+    deduplicated_results = defaultdict(list)
 
     def vectors_equal(v1, v2):
         """Compare two vectors for equality with numerical tolerance."""
@@ -160,14 +160,14 @@ def get_hidden_states(model, input_text, layer_pos_pairs, tokenizer, device):
                 attn_vector = None
                 mlp_vector = None
 
-                if attn_output is not None:
-                    if len(attn_output.shape) == 3:
-                        attn_vector = attn_output[0, pos, :].detach().cpu().numpy()
-                    elif len(attn_output.shape) == 2:
-                        attn_vector = attn_output[pos, :].detach().cpu().numpy()
-                    else:
-                        logging.warning(f"Unexpected shape for attention output: {attn_output.shape}")
-                        attn_vector = None
+                # if attn_output is not None:
+                #     if len(attn_output.shape) == 3:
+                #         attn_vector = attn_output[0, pos, :].detach().cpu().numpy()
+                #     elif len(attn_output.shape) == 2:
+                #         attn_vector = attn_output[pos, :].detach().cpu().numpy()
+                #     else:
+                #         logging.warning(f"Unexpected shape for attention output: {attn_output.shape}")
+                #         attn_vector = None
 
                 if mlp_output is not None:
                     if len(mlp_output.shape) == 3:
@@ -185,7 +185,7 @@ def get_hidden_states(model, input_text, layer_pos_pairs, tokenizer, device):
                 hidden_state_dict = {
                     'layer': layer,
                     'position': pos,
-                    'attn_output': attn_vector.tolist() if attn_vector is not None else None,
+                    # 'attn_output': attn_vector.tolist() if attn_vector is not None else None,
                     'mlp_output': mlp_vector.tolist() if mlp_vector is not None else None,
                     'residual': residual.tolist()
                 }
@@ -209,12 +209,13 @@ def main():
     parser.add_argument("--save_fname", required=True, help="Filename to save the analysis results")
     parser.add_argument("--device", default="cuda:0", help="Device to run the model on")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode for verbose output")
+    parser.add_argument("--no_deduplicate", action="store_true", help="Disable deduplication of vectors")
     
     args = parser.parse_args()
     
     setup_logging()
     
-    logging.info("Loading model and tokenizer...")
+    # logging.info("Loading model and tokenizer...")
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     try:
         model = GPT2LMHeadModel.from_pretrained(args.ckpt, use_safetensors=True).to(device)
@@ -228,13 +229,13 @@ def main():
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.pad_token_id = tokenizer.eos_token_id
     model.config.pad_token_id = model.config.eos_token_id
-    logging.info("Model and tokenizer loaded successfully")
+    # logging.info("Model and tokenizer loaded successfully")
     
     dataset = load_dataset(args.dataset, args.debug)
     layer_pos_pairs = eval(args.layer_pos_pairs)
-    logging.info(f"Layer position pairs: {layer_pos_pairs}")
+    # logging.info(f"Layer position pairs: {layer_pos_pairs}")
     
-    results = defaultdict(list)  # Changed to defaultdict
+    results = defaultdict(list)
     
     for idx, instance in enumerate(tqdm(dataset, desc="Processing dataset")):
         logging.debug(f"Processing instance {idx}")
@@ -247,7 +248,6 @@ def main():
         # **New Condition:** Skip instances where 'type' includes 'atomic'
         instance_type = str(instance.get('type', '')).lower()
         if 'atomic' in instance_type:
-            # logging.info(f"Skipping atomic instance {idx} with type '{instance.get('type')}'")
             continue
         
         # Proceed with processing for non-atomic instances
@@ -266,37 +266,38 @@ def main():
         results[group_type].append(result)
         logging.debug(f"Added result for group '{group_type}'")
     
-    # After processing all instances but before saving:
-    deduplicated_results, dedup_stats = deduplicate_vectors(results)
-    logging.warning(f"Deduplication statistics: {dedup_stats}")
+    model = model.to('cpu')
+    del model
     
-    # Save deduplicated results
+    # After processing all instances but before saving:
+    if args.no_deduplicate:
+        # logging.info("Deduplication is disabled.")
+        final_results = results
+    else:
+        deduplicated_results, dedup_stats = deduplicate_vectors(results)
+        logging.warning(f"Deduplication statistics: {dedup_stats}")
+        final_results = deduplicated_results
+
+        # Log deduplication statistics
+        logging.info(f"Deduplication statistics:")
+        for group_name, stats in dedup_stats.items():
+            logging.info(f"\nGroup: {group_name}")
+            for key, count in sorted(stats.items()):
+                layer, pos = key.replace('layer', '').split('_pos')
+                logging.info(f"  Layer {layer}, Position {pos}: Removed {count} duplicates")
+        
+        logging.info(f"\nFinal counts after deduplication:")
+        for key, value in final_results.items():
+            logging.info(f"  {key}: {len(value)}")
+    
+    # Save results
     os.makedirs(args.save_dir, exist_ok=True)
     save_path = os.path.join(args.save_dir, args.save_fname)
     
-    # Save main results
     with open(save_path, 'w') as f:
-        json.dump(deduplicated_results, f)
+        json.dump(final_results, f)
     
-    # Save deduplication statistics
-    # stats_save_path = os.path.join(args.save_dir, f"dedup_stats_{args.save_fname}")
-    # with open(stats_save_path, 'w') as f:
-    #     json.dump(dedup_stats, f)
-    
-    # Log deduplication statistics
-    logging.info(f"Deduplication statistics:")
-    for group_name, stats in dedup_stats.items():
-        logging.info(f"\nGroup: {group_name}")
-        for key, count in sorted(stats.items()):
-            layer, pos = key.replace('layer', '').split('_pos')
-            logging.info(f"  Layer {layer}, Position {pos}: Removed {count} duplicates")
-    
-    logging.info(f"\nFinal counts after deduplication:")
-    for key, value in deduplicated_results.items():
-        logging.info(f"  {key}: {len(value)}")
-    
-    logging.info(f"\nResults saved to {save_path}")
-    # logging.info(f"Deduplication statistics saved to {stats_save_path}")
+    # logging.info(f"\nResults saved to {save_path}")
 
 if __name__ == "__main__":
     main()
