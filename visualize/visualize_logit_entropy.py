@@ -49,7 +49,6 @@ def main(args):
     device = torch.device('cuda:0')
     BATCH_SIZE = 65536
     
-    
     all_entropy = dict()
     for key in test_dict.keys():
         all_entropy[key] = []
@@ -116,7 +115,7 @@ def main(args):
     plt.tight_layout()
 
     # Display the plot
-    plt.savefig(os.path.join(args.model_dir, "entropy_for_nonsense.png"), format="png", dpi=300)
+    plt.savefig(os.path.join(args.model_dir, "entropy.png"), format="png", dpi=300)
     
 
 if __name__=="__main__":

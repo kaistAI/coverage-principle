@@ -32,7 +32,8 @@ def visualize_mmr(mean_reciprocal_rank, args):
         
         # Set x-axis to log scale and customize ticks
         plt.xscale("log")
-        plt.xticks([1e4, 5e4, 1e5])
+        xticks = [int(args.step_list[0]), int(args.step_list[-1])]
+        plt.xticks(xticks, labels=[f"{int(tick)}" for tick in xticks])
 
         # Adding labels, title, and legend
         plt.xlabel('Checkpoint Steps')

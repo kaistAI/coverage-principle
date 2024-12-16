@@ -141,6 +141,7 @@ def main():
             real_h_r1_r2_list = [query.strip("><").split("><") for query in query_list]
             real_b_list, real_t_list, real_r2_list = [], [], []
             for h, r1, r2 in real_h_r1_r2_list:
+                # To Do : test_nonsenses is not in atomic_dict
                 b = atomic_dict[(h, r1)]
                 real_b_list.append(b)
                 real_r2_list.append(r2)
@@ -169,6 +170,7 @@ def main():
                     
                 temp_dict['b_rank_pos1_'+str(layer_ind)] = return_rank(temp, word_embedding, tokenizer([f"<{target}>" for target in real_b_list])["input_ids"])[:, 1].tolist()
                 temp_dict['r2_rank_pos2_'+str(layer_ind)] = return_rank(temp, word_embedding, tokenizer([f"<{target}>" for target in real_r2_list])["input_ids"])[:, 2].tolist()
+                temp_dict['t_rank_pos2_'+str(layer_ind)] = return_rank(temp, word_embedding, tokenizer([f"<{target}>" for target in real_t_list])["input_ids"])[:, 2].tolist()
             
             if checkpoint in [f"checkpoint-{step}" for step in args.step_list]:
                 # perturb the head entity

@@ -31,7 +31,7 @@ def main(args):
             test_dict["Train(ID)_atomic"].append(item)
         elif t == "train_inferred":
             test_dict["Train(ID)_inferred"].append(item)
-        elif t == "test_inferred_iid":
+        elif t == "test_inferred_id":
             test_dict["Test(ID)"].append(item)
         elif t == "test_inferred_ood":
             test_dict["Test(OOD)"].append(item)
