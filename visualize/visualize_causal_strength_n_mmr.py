@@ -13,7 +13,7 @@ def visualize_mmr(mean_reciprocal_rank, args):
     # checkpoint_steps = [int(k.split("-")[-1]) for k in mean_reciprocal_rank.keys()]
     # checkpoint_steps.sort()
 
-    labels = ["b_rank_pos1", "r2_rank_pos2"]
+    labels = ["b_rank_pos1", "r2_rank_pos2", "t_rank_pos2"]
 
     for label in labels:
         data = {}
@@ -32,7 +32,7 @@ def visualize_mmr(mean_reciprocal_rank, args):
         
         # Set x-axis to log scale and customize ticks
         plt.xscale("log")
-        xticks = [int(args.step_list[0]), int(args.step_list[-1])]
+        xticks = [int(args.step_list[0]), int(args.step_list[-2])]
         plt.xticks(xticks, labels=[f"{int(tick)}" for tick in xticks])
 
         # Adding labels, title, and legend
@@ -45,7 +45,6 @@ def visualize_mmr(mean_reciprocal_rank, args):
         # Save the plot
         os.makedirs(os.path.join(os.path.dirname(args.json_path), os.path.splitext(os.path.basename(args.json_path))[0]), exist_ok=True)
         plt.savefig(os.path.join(os.path.dirname(args.json_path), os.path.splitext(os.path.basename(args.json_path))[0], f"MMR_{label.replace('_', '-')}.png"), dpi=300, bbox_inches='tight')
-        # plt.savefig(os.path.join(args.model_dir, "accuracy.png"), format="png", dpi=300)
     
 
 def visualize_causal_strength(causal_strength, checkpoint_name, args):
@@ -198,7 +197,7 @@ def visualize_causal_strength_n_mmr(args):
         causal_strength_step = all_checkpoints
     else:
         min_checkpoint_step = f"checkpoint-{args.step_list[0]}"
-        max_checkpoint_step = f"checkpoint-{args.step_list[-1]}"
+        max_checkpoint_step = f"checkpoint-{args.step_list[-2]}"
         causal_strength_step = [f"checkpoint-{step}" for step in args.step_list]
     
     min_checkpoint_causal_strength = None
@@ -217,7 +216,7 @@ def visualize_causal_strength_n_mmr(args):
                 continue
             # This keys only used in MMR not in Causal Strength
             if ((args.task == "composition" 
-                 and any((k in key for k in ["b_rank_pos1", "r2_rank_pos2"])))
+                 and any((k in key for k in ["b_rank_pos1", "r2_rank_pos2", "t_rank_pos2"])))
             or (args.task == "comparison" 
                 and any(k in key for k in ["val1_rank_pos2", "val2_rank_pos4", "label0_rank_pos0", 
                                            "label1_rank_pos0", "label2_rank_pos0"]))
@@ -230,8 +229,8 @@ def visualize_causal_strength_n_mmr(args):
                 causal_strength[key] = 0
             
         if args.task == "composition":
-            all_keys = ["b_rank_pos1_", "r2_rank_pos2_", "h_", "r1_", "r2_"]
-            causal_strength_keys = all_keys[2:]
+            all_keys = ["b_rank_pos1_", "r2_rank_pos2_", "t_rank_pos2_", "h_", "r1_", "r2_"]
+            causal_strength_keys = all_keys[3:]
         elif args.task == "comparison":
             all_keys = ["val1_rank_pos2_", "val2_rank_pos4_", "label0_rank_pos0_", 
                         "label1_rank_pos0_", "label2_rank_pos0_", "e1_", "e2_", "a_"]

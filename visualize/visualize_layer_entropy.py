@@ -10,9 +10,6 @@ import matplotlib.pyplot as plt
 
 def calculate_entropy(logits):
     
-    # Only calculate tail entity's logit
-    # logits = logits[:,-1,:]
-    
     probabilities = F.softmax(logits, dim=-1)
     
     # Calculate entropy
@@ -46,7 +43,6 @@ def main(args):
         
     all_checkpoints = [checkpoint for checkpoint in os.listdir(args.model_dir) if checkpoint.startswith("checkpoint")]
     all_checkpoints.sort(key=lambda var: int(var.split("-")[1]))
-    # all_checkpoints = all_checkpoints[-3:]
     print(all_checkpoints)
     
     device = torch.device('cuda:1')
@@ -137,9 +133,10 @@ def main(args):
 
             # Set x-axis to log scale and customize ticks
             plt.xscale('symlog')
-            plt.xticks([1250, 12500, 30000], labels=[f"{int(tick)}" for tick in [1250, 12500, 30000]])
+            xticks = [int(args.step_list[0]), int(args.step_list[-2])]
+            plt.xticks(xticks, labels=[f"{int(tick)}" for tick in xticks])
+            # plt.xticks([1250, 12500, 30000], labels=[f"{int(tick)}" for tick in [1250, 12500, 30000]])
             
-
             # Labeling the plot
             plt.title(f"Entropy for {pos} & Layer {layer_ind}")
             plt.xlabel("Step (Log Scale)")
@@ -157,6 +154,7 @@ if __name__=="__main__":
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_dir", default=None, type=str, help="parent directory of saved model checkpoints")
+    parser.add_argument("--step_list", default=None, nargs="+", help="checkpoint's steps to check causal strength")
     parser.add_argument("--num_layer", default=8, type=int, help="number of layer of the model")
     
     args = parser.parse_args()

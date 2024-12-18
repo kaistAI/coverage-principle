@@ -129,7 +129,7 @@ def main(args):
     assert all(os.path.isdir(os.path.join(args.model_dir, checkpoint)) for checkpoint in all_checkpoints)
     all_checkpoints.sort(key=lambda var: int(var.split("-")[1]))
     
-    device = "cuda:0"
+    device = torch.device('cuda:0')
 
     for checkpoint in all_checkpoints:
         model_path = os.path.join(args.model_dir, checkpoint)
