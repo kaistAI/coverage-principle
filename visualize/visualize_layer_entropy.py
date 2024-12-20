@@ -86,8 +86,11 @@ def main(args):
                 for layer_ind in range(1, args.num_layer+1):
                     hidden_states_orig = all_hidden_states[layer_ind]
                     with torch.no_grad():
-                        temp = model.transformer.ln_f(hidden_states_orig)
-                        temp_logit_lens = torch.matmul(temp, word_embedding.T)
+                        if layer_ind != args.num_layer:
+                            temp = model.transformer.ln_f(hidden_states_orig)
+                            temp_logit_lens = torch.matmul(temp, word_embedding.T)
+                        else:
+                            temp_logit_lens = torch.matmul(hidden_states_orig, word_embedding.T)
 
                     # Calculate entropy for the logits
                     batch_entropy_for_position = calculate_entropy(temp_logit_lens)
