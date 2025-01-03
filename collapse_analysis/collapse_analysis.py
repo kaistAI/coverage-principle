@@ -113,20 +113,22 @@ def load_and_preprocess_data(train_path, valid_path, test_path):
     # Group test data based on identified targets
     grouped_id_test_data = defaultdict(list)
     grouped_ood_test_data = defaultdict(list)
+    grouped_nonsense_test_data = defaultdict(list)
     
     for instance in test_data:
         input_prefix = '><'.join(instance['input_text'].split('><')[:2]) + '>'
         if input_prefix.endswith('>>'):
             input_prefix=input_prefix[:-1]
-        
         identified_target = train_lookup.get(input_prefix, 'unknown')
         
         if instance.get('type', 'test_inferred_iid') in ['train_inferred', 'test_inferred_iid']:
             grouped_id_test_data[identified_target].append(instance)
         elif instance['type'] == 'test_inferred_ood':
             grouped_ood_test_data[identified_target].append(instance)
+        elif instance['type'] == 'test_nonsenses':
+            grouped_nonsense_test_data[instance['target_text']].append(instance)
     
-    return filtered_train_data, grouped_id_test_data, grouped_ood_test_data
+    return filtered_train_data, grouped_id_test_data, grouped_ood_test_data, grouped_nonsense_test_data
 
 def get_hidden_states(model, input_text, layer_pos_pairs, tokenizer, device):
     inputs = tokenizer(input_text, return_tensors="pt").to(device)
@@ -245,6 +247,7 @@ def main():
     parser.add_argument("--save_dir", required=True, help="Directory to save the analysis results")
     parser.add_argument("--id_save_fname", required=True, help="Filename to save the in-distribution analysis results")
     parser.add_argument("--ood_save_fname", required=True, help="Filename to save the out-of-distribution analysis results")
+    parser.add_argument("--nonsense_save_fname", required=True, help="Filename to save the nonsense analysis results")
     parser.add_argument("--device", default="cuda:0", help="Device to run the model on")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode for verbose output")
     
@@ -264,19 +267,23 @@ def main():
     model.config.pad_token_id = model.config.eos_token_id
     logging.info("Model and tokenizer loaded successfully")
     
-    filtered_train_data, grouped_id_test_data, grouped_ood_test_data = load_and_preprocess_data(os.path.join(args.base_dir, args.train_dataset), os.path.join(args.base_dir, args.valid_dataset), os.path.join(args.base_dir, args.test_dataset))
+    filtered_train_data, grouped_id_test_data, grouped_ood_test_data, grouped_nonsense_test_data = load_and_preprocess_data(os.path.join(args.base_dir, args.train_dataset), os.path.join(args.base_dir, args.valid_dataset), os.path.join(args.base_dir, args.test_dataset))
     layer_pos_pairs = eval(args.layer_pos_pairs)
     logging.info(f"Layer position pairs: {layer_pos_pairs}")
     
     logging.info(f"Number of filtered train instances: {len(filtered_train_data)}")
     logging.info(f"Number of unique ID test targets: {len(grouped_id_test_data)}")
     logging.info(f"Number of unique OOD test targets: {len(grouped_ood_test_data)}")
+    logging.info(f"Number of unique nonsense test targets: {len(grouped_nonsense_test_data)}")
     
     logging.info("Processing in-distribution test data...")
     id_results = process_data_group(model, grouped_id_test_data, layer_pos_pairs, tokenizer, device)
     
     logging.info("Processing out-of-distribution test data...")
     ood_results = process_data_group(model, grouped_ood_test_data, layer_pos_pairs, tokenizer, device)
+    
+    logging.info("Processing nonsense test data...")
+    nonsense_results = process_data_group(model, grouped_nonsense_test_data, layer_pos_pairs, tokenizer, device)
     
     # Perform deduplication
     logging.info("Performing deduplication for in-distribution data...")
@@ -285,27 +292,39 @@ def main():
     logging.info("Performing deduplication for out-of-distribution data...")
     ood_results_dedup, ood_dedup_stats = deduplicate_vectors(ood_results)
     
+    logging.info("Performing deduplication for nonsense data...")
+    nonsense_results_dedup, nonsense_dedup_stats = deduplicate_vectors(nonsense_results)
+    
     os.makedirs(args.save_dir, exist_ok=True)
     
     # Save deduplicated results
-    id_save_path = os.path.join(args.base_dir, args.save_dir, args.id_save_fname)
+    id_save_path = os.path.join(args.save_dir, args.id_save_fname)
     with open(id_save_path, 'w') as f:
         json.dump(id_results_dedup, f)
     logging.info(f"Deduplicated in-distribution analysis results saved to {id_save_path}")
     
-    ood_save_path = os.path.join(args.base_dir, args.save_dir, args.ood_save_fname)
+    ood_save_path = os.path.join(args.save_dir, args.ood_save_fname)
     with open(ood_save_path, 'w') as f:
         json.dump(ood_results_dedup, f)
     logging.info(f"Deduplicated out-of-distribution analysis results saved to {ood_save_path}")
     
+    nonsense_save_path = os.path.join(args.save_dir, args.nonsense_save_fname)
+    with open(nonsense_save_path, 'w') as f:
+        json.dump(nonsense_results_dedup, f)
+    logging.info(f"Deduplicated nonsense analysis results saved to {nonsense_save_path}")
+    
     # Save deduplication statistics
-    id_stats_save_path = os.path.join(args.base_dir, args.save_dir, f"dedup_stats_{args.id_save_fname}")
+    id_stats_save_path = os.path.join(args.save_dir, f"dedup_stats_{args.id_save_fname}")
     with open(id_stats_save_path, 'w') as f:
         json.dump(id_dedup_stats, f)
     
-    ood_stats_save_path = os.path.join(args.base_dir, args.save_dir, f"dedup_stats_{args.ood_save_fname}")
+    ood_stats_save_path = os.path.join(args.save_dir, f"dedup_stats_{args.ood_save_fname}")
     with open(ood_stats_save_path, 'w') as f:
         json.dump(ood_dedup_stats, f)
+        
+    nonsense_stats_save_path = os.path.join(args.save_dir, f"dedup_stats_{args.nonsense_save_fname}")
+    with open(nonsense_stats_save_path, 'w') as f:
+        json.dump(nonsense_dedup_stats, f)
     
     # Log deduplication statistics and final counts
     logging.info("\nDeduplication statistics:")
@@ -322,6 +341,13 @@ def main():
         for key, count in sorted(stats.items()):
             layer, pos = key.replace('layer', '').split('_pos')
             logging.info(f"  Layer {layer}, Position {pos}: Removed {count} duplicates")
+            
+    logging.info("\nNonsense:")
+    for target, stats in nonsense_dedup_stats.items():
+        logging.info(f"\nTarget: {target}")
+        for key, count in sorted(stats.items()):
+            layer, pos = key.replace('layer', '').split('_pos')
+            logging.info(f"  Layer {layer}, Position {pos}: Removed {count} duplicates")
     
     logging.info("\nFinal counts after deduplication:")
     logging.info("In-distribution:")
@@ -330,6 +356,9 @@ def main():
     logging.info("Out-of-distribution:")
     for target, instances in ood_results_dedup.items():
         logging.info(f"  {target}: {len(instances)}")
+    logging.info("Nonsense:")
+    for target, instances in nonsense_results_dedup.items():
+        logging.info(f"  {target}: {len(instances)}")    
         
 if __name__ == "__main__":
     main()
