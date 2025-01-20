@@ -7,6 +7,7 @@ from scipy.spatial.distance import cosine
 from collections import defaultdict
 import argparse
 from tqdm import tqdm
+import re
 
 # -------------- NEW IMPORTS FOR GPU ACCELERATION --------------
 import torch
@@ -158,72 +159,93 @@ def calculate_metrics(grouped_vectors, all_vectors, ood=False):
     # Collect within-group similarities
     within_group_similarities_all = []
     between_group_similarities = []
-    group_means = []
+    group_mean_vectors = []
 
     # We can track progress with tqdm if we expect many groups.
     # But typically, grouping was done in process_vectors.
     # If you have many groups, you can wrap the loop below in tqdm as well.
-    for group_key, group in tqdm(grouped_vectors.items()):
+    for bridge_entity, group in tqdm(grouped_vectors.items()):
         if len(group) > 1:
             _, similarities = calculate_within_group_similarity_gpu(group)
             if similarities:
                 within_group_similarities_all.extend(similarities)
         # Always compute and store the mean
-        group_means.append(np.mean(group, axis=0))
+        group_mean_vectors.append(np.mean(group, axis=0))
 
     # Between-group similarities
-    _, between_similarities = calculate_between_group_similarity_gpu(group_means)
+    _, between_similarities = calculate_between_group_similarity_gpu(group_mean_vectors)
     between_group_similarities.extend(between_similarities)
 
+    # compute the all-vector similarities
+    all_similarities = compute_all_similarities_gpu(all_vectors)
     # If OOD (or nonsense), compute the all-vector similarities
-    all_similarities = None
-    if ood and len(all_vectors) > 1:
-        print("Computing all-vector similarities (OOD or Nonsense)...")
-        all_similarities = compute_all_similarities_gpu(all_vectors)
+    # all_similarities = None
+    # if ood and len(all_vectors) > 1:
+    #     print("Computing all-vector similarities (OOD or Nonsense)...")
+    #     all_similarities = compute_all_similarities_gpu(all_vectors)
 
     return (np.mean(within_group_similarities_all) if within_group_similarities_all else 0,
             within_group_similarities_all,
             np.mean(between_group_similarities) if between_group_similarities else 0,
             between_group_similarities,
-            group_means,
+            group_mean_vectors,
             all_similarities)
 
 def main():
     parser = argparse.ArgumentParser(description='Calculate and visualize similarity metrics for ID, OOD, and Nonsense vectors')
-    parser.add_argument('--id_file', required=True, help='Path to the ID vector file')
+    parser.add_argument('--id_train_file', required=True, help='Path to the ID Train vector file')
+    parser.add_argument('--id_test_file', required=True, help='Path to the ID Test vector file')
     parser.add_argument('--ood_file', required=True, help='Path to the OOD vector file')
     parser.add_argument('--nonsense_file', required=True, help='Path to the Nonsense vector file')
-    parser.add_argument('--layer', type=int, default=7, help='Layer to analyze (default: 7)')
+    # parser.add_argument('--layer', type=int, default=7, help='Layer to analyze (default: 7)')
     parser.add_argument('--output_dir', required=True, help='Directory to save the plots and results')
     args = parser.parse_args()
+    
+    # Argument Error Check
+    assert re.findall(r"\(\d+,\s*\d+\)", args.id_train_file)[0] == re.findall(r"\(\d+,\s*\d+\)", args.output_dir)[0]
 
     # Create output directory
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    
+    matches = re.findall(r"\(\d+,\s*\d+\)", args.output_dir)
+    assert len(matches) == 1
+    target_layer = matches[0].strip(")(").split(",")[0]
 
     # Prepare a file to save numerical results
-    results_file = output_dir / f"similarity_metrics_layer{args.layer}.txt"
+    results_file = output_dir / f"similarity_metrics_layer{target_layer}.txt"
 
     # Load data
-    id_data = load_data(args.id_file)
+    id_train_data = load_data(args.id_train_file)
+    id_test_data = load_data(args.id_test_file)
     ood_data = load_data(args.ood_file)
     nonsense_data = load_data(args.nonsense_file)
 
     # Process into grouped vectors
-    id_vectors, id_all_vectors = process_vectors(id_data, args.layer)
-    ood_vectors, ood_all_vectors = process_vectors(ood_data, args.layer)
-    nonsense_vectors, nonsense_all_vectors = process_vectors(nonsense_data, args.layer)
+    id_train_vectors, id_train_all_vectors = process_vectors(id_train_data, target_layer)
+    id_test_vectors, id_test_all_vectors = process_vectors(id_test_data, target_layer)
+    ood_vectors, ood_all_vectors = process_vectors(ood_data, target_layer)
+    nonsense_vectors, nonsense_all_vectors = process_vectors(nonsense_data, target_layer)
 
-    print(f"\nAnalyzing layer {args.layer}...")
+    print(f"\nAnalyzing layer {target_layer}...")
 
-    # =============== ID Metrics ===============
-    print("\nComputing ID metrics...")
-    (id_within_similarity, id_within_similarities,
-     id_between_similarity, id_between_similarities,
-     id_group_means, _) = calculate_metrics(id_vectors, id_all_vectors, ood=False)
+    # =============== ID Train Metrics ===============
+    print("\nComputing ID Train metrics...")
+    (id_train_within_similarity, id_train_within_similarities,
+     id_train_between_similarity, id_train_between_similarities,
+     id_train_group_means, id_train_all_similarities) = calculate_metrics(id_train_vectors, id_train_all_vectors, ood=False)
     
-    print(f"  ID within-group similarity (mean): {id_within_similarity:.4f}")
-    print(f"  ID between-group similarity (mean): {id_between_similarity:.4f}")
+    print(f"  ID within-group similarity (mean): {id_train_within_similarity:.4f}")
+    print(f"  ID between-group similarity (mean): {id_train_between_similarity:.4f}")
+    
+    # =============== ID Test Metrics ===============
+    print("\nComputing ID Test metrics...")
+    (id_test_within_similarity, id_test_within_similarities,
+     id_test_between_similarity, id_test_between_similarities,
+     id_test_group_means, id_test_all_similarities) = calculate_metrics(id_test_vectors, id_test_all_vectors, ood=False)
+    
+    print(f"  ID within-group similarity (mean): {id_test_within_similarity:.4f}")
+    print(f"  ID between-group similarity (mean): {id_test_between_similarity:.4f}")
 
     # =============== OOD Metrics ===============
     print("\nComputing OOD metrics...")
@@ -253,18 +275,40 @@ def main():
 
     # =============== Cross-Category Comparisons ===============
     print("\nComputing cross-category similarities...")
-
-    # Global OOD mean vs ID group means
+    
+    # ID Train group mean vs ID Test group mean for same bridge entity
+    id_train_group_mean_dict = {}
+    for bridge_entity, vector_list in id_train_vectors.items():
+        id_train_group_mean_dict[bridge_entity] = np.mean(vector_list, axis=0)
+    id_test_group_mean_dict = {}
+    for bridge_entity, vector_list in id_test_vectors.items():
+        id_test_group_mean_dict[bridge_entity] = np.mean(vector_list, axis=0)
+    intersection_bridge_entity_set = set(id_train_group_mean_dict.keys()) & set(id_test_group_mean_dict.keys())
+    id_train_test_similarity_each_group = [cosine_similarity(id_train_group_mean_dict[bridge_entity], id_test_group_mean_dict[bridge_entity]) for bridge_entity in intersection_bridge_entity_set]
+    avg_id_train_test_similarity_each_group = np.mean(id_train_test_similarity_each_group)
+    print(f"  Average similarity (ID Train group mean vs ID Test group mean for same group): {avg_id_train_test_similarity_each_group:.4f}")
+        
+    # Global OOD mean vs ID Train group means
     ood_global_mean = np.mean(np.vstack(ood_group_means), axis=0)
-    id_ood_similarities = [cosine_similarity(ood_global_mean, id_mean) for id_mean in id_group_means]
-    avg_id_ood_similarity = np.mean(id_ood_similarities)
-    print(f"  Average similarity (OOD global mean vs ID group means): {avg_id_ood_similarity:.4f}")
+    id_train_ood_similarities = [cosine_similarity(ood_global_mean, id_mean) for id_mean in id_train_group_means]
+    avg_id_train_ood_similarity = np.mean(id_train_ood_similarities)
+    print(f"  Average similarity (OOD global mean vs ID Train group means): {avg_id_train_ood_similarity:.4f}")
+    
+    # Global OOD mean vs ID Test group means
+    id_test_ood_similarities = [cosine_similarity(ood_global_mean, id_mean) for id_mean in id_test_group_means]
+    avg_id_test_ood_similarity = np.mean(id_test_ood_similarities)
+    print(f"  Average similarity (OOD global mean vs ID Test group means): {avg_id_test_ood_similarity:.4f}")
 
-    # Global Nonsense mean vs ID group means
+    # Global Nonsense mean vs ID Train group means
     nonsense_global_mean = np.mean(np.vstack(nonsense_group_means), axis=0)
-    id_nonsense_similarities = [cosine_similarity(nonsense_global_mean, id_mean) for id_mean in id_group_means]
-    avg_id_nonsense_similarity = np.mean(id_nonsense_similarities)
-    print(f"  Average similarity (Nonsense global mean vs ID group means): {avg_id_nonsense_similarity:.4f}")
+    id_train_nonsense_similarities = [cosine_similarity(nonsense_global_mean, id_mean) for id_mean in id_train_group_means]
+    avg_id_train_nonsense_similarity = np.mean(id_train_nonsense_similarities)
+    print(f"  Average similarity (Nonsense global mean vs ID Train group means): {avg_id_train_nonsense_similarity:.4f}")
+    
+    # Global Nonsense mean vs ID Test group means
+    id_test_nonsense_similarities = [cosine_similarity(nonsense_global_mean, id_mean) for id_mean in id_test_group_means]
+    avg_id_test_nonsense_similarity = np.mean(id_test_nonsense_similarities)
+    print(f"  Average similarity (Nonsense global mean vs ID Test group means): {avg_id_test_nonsense_similarity:.4f}")
 
     # Global Nonsense mean vs OOD group means
     ood_nonsense_similarities = [cosine_similarity(nonsense_global_mean, ood_mean) for ood_mean in ood_group_means]
@@ -274,11 +318,23 @@ def main():
     # =============== Write Numerical Results to File ===============
     print(f"\nWriting results to {results_file}...")
     with open(results_file, 'w') as f:
-        f.write(f"Analyzing layer {args.layer}\n\n")
+        f.write(f"Analyzing layer {target_layer}\n\n")
 
-        f.write("=== ID Metrics ===\n")
-        f.write(f"ID within-group similarity (mean): {id_within_similarity:.4f}\n")
-        f.write(f"ID between-group similarity (mean): {id_between_similarity:.4f}\n\n")
+        f.write("=== ID Train Metrics ===\n")
+        f.write(f"ID-Train within-group similarity (mean): {id_train_within_similarity:.4f}\n")
+        f.write(f"ID-Train between-group similarity (mean): {id_train_between_similarity:.4f}\n")
+        if id_train_all_similarities:
+            f.write(f"ID-Train all-vector similarity (mean): {np.mean(id_train_all_similarities):.4f}\n\n")
+        else:
+            f.write(f"ID-Train all-vector similarity (mean): None\n\n")
+        
+        f.write("=== ID Test Metrics ===\n")
+        f.write(f"ID-Test within-group similarity (mean): {id_test_within_similarity:.4f}\n")
+        f.write(f"ID-Test between-group similarity (mean): {id_test_between_similarity:.4f}\n")
+        if id_test_all_similarities:
+            f.write(f"ID-Test all-vector similarity (mean): {np.mean(id_test_all_similarities):.4f}\n\n")
+        else:
+            f.write(f"ID-Test all-vector similarity (mean): None\n\n")
 
         f.write("=== OOD Metrics ===\n")
         f.write(f"OOD within-group similarity (mean): {ood_within_similarity:.4f}\n")
@@ -295,12 +351,21 @@ def main():
             f.write(f"Nonsense all-vector similarity (mean): {np.mean(nonsense_all_similarities):.4f}\n\n")
         else:
             f.write("Nonsense all-vector similarity (mean): None\n\n")
+            
+        f.write("=== ID_Train-ID_Test Similarities ===\n")
+        f.write(f"Average similarity (ID Train group mean vs ID Test group mean for same group): {avg_id_train_test_similarity_each_group:.4f}\n\n")
 
-        f.write("=== ID-OOD Similarities ===\n")
-        f.write(f"Average similarity (OOD global mean vs ID group means): {avg_id_ood_similarity:.4f}\n\n")
+        f.write("=== ID_Train-OOD Similarities ===\n")
+        f.write(f"Average similarity (OOD global mean vs ID Train group means): {avg_id_train_ood_similarity:.4f}\n\n")
+        
+        f.write("=== ID_Test-OOD Similarities ===\n")
+        f.write(f"Average similarity (OOD global mean vs ID Test group means): {avg_id_test_ood_similarity:.4f}\n\n")
 
-        f.write("=== ID-Nonsense Similarities ===\n")
-        f.write(f"Average similarity (Nonsense global mean vs ID group means): {avg_id_nonsense_similarity:.4f}\n\n")
+        f.write("=== ID_Train-Nonsense Similarities ===\n")
+        f.write(f"Average similarity (Nonsense global mean vs ID Train group means): {avg_id_train_nonsense_similarity:.4f}\n\n")
+        
+        f.write("=== ID_Test-Nonsense Similarities ===\n")
+        f.write(f"Average similarity (Nonsense global mean vs ID Test group means): {avg_id_test_nonsense_similarity:.4f}\n\n")
 
         f.write("=== OOD-Nonsense Similarities ===\n")
         f.write(f"Average similarity (Nonsense global mean vs OOD group means): {avg_ood_nonsense_similarity:.4f}\n\n")
@@ -308,15 +373,41 @@ def main():
     # =============== Create Plots ===============
     print("\nCreating plots...")
 
-    # ---------------- ID PLOTS ----------------
-    print("  - Plotting ID distributions...")
+    # ---------------- ID Train PLOTS ----------------
+    print("  - Plotting ID Train distributions...")
     plot_comparison_distributions(
-        id_within_similarities,
-        id_between_similarities,
+        id_train_within_similarities,
+        id_train_between_similarities,
         ['Within-group', 'Between-group'],
-        f'ID Similarity Distributions (Layer {args.layer})',
-        output_dir / f'id_similarities_layer{args.layer}.png'
+        f'ID Train Similarity Distributions (Layer {target_layer})',
+        output_dir / f'id_train_similarities_layer{target_layer}.png'
     )
+    
+    if id_train_all_similarities and len(id_train_all_similarities) > 0:
+        plot_similarity_distribution(
+            id_train_all_similarities,
+            f'ID Train All-Vector Similarity Distribution (Layer {target_layer})',
+            output_dir / f'id_train_all_similarities_layer{target_layer}.png',
+            color='green'
+        )
+    
+    # ---------------- ID Test PLOTS ----------------
+    print("  - Plotting ID Test distributions...")
+    plot_comparison_distributions(
+        id_test_within_similarities,
+        id_test_between_similarities,
+        ['Within-group', 'Between-group'],
+        f'ID Train Similarity Distributions (Layer {target_layer})',
+        output_dir / f'id_test_similarities_layer{target_layer}.png'
+    )
+    
+    if id_test_all_similarities and len(id_test_all_similarities) > 0:
+        plot_similarity_distribution(
+            id_test_all_similarities,
+            f'ID Test All-Vector Similarity Distribution (Layer {target_layer})',
+            output_dir / f'id_test_all_similarities_layer{target_layer}.png',
+            color='green'
+        )
 
     # ---------------- OOD PLOTS ----------------
     print("  - Plotting OOD distributions...")
@@ -324,31 +415,48 @@ def main():
         ood_within_similarities,
         ood_between_similarities,
         ['Within-group', 'Between-group'],
-        f'OOD Similarity Distributions (Layer {args.layer})',
-        output_dir / f'ood_similarities_layer{args.layer}.png'
+        f'OOD Similarity Distributions (Layer {target_layer})',
+        output_dir / f'ood_similarities_layer{target_layer}.png'
     )
 
     if ood_all_similarities and len(ood_all_similarities) > 0:
         plot_similarity_distribution(
             ood_all_similarities,
-            f'OOD All-Vector Similarity Distribution (Layer {args.layer})',
-            output_dir / f'ood_all_similarities_layer{args.layer}.png',
+            f'OOD All-Vector Similarity Distribution (Layer {target_layer})',
+            output_dir / f'ood_all_similarities_layer{target_layer}.png',
             color='green'
         )
 
+    
+    
     plot_similarity_distribution(
-        id_ood_similarities,
-        f'ID-OOD Mean Similarity Distribution (Layer {args.layer})',
-        output_dir / f'id_ood_mean_similarities_layer{args.layer}.png',
+        id_train_ood_similarities,
+        f'ID_Train-OOD Mean Similarity Distribution (Layer {target_layer})',
+        output_dir / f'id_train_ood_mean_similarities_layer{target_layer}.png',
+        color='purple'
+    )
+    
+    plot_similarity_distribution(
+        id_test_ood_similarities,
+        f'ID_Test-OOD Mean Similarity Distribution (Layer {target_layer})',
+        output_dir / f'id_test_ood_mean_similarities_layer{target_layer}.png',
         color='purple'
     )
 
     plot_comparison_distributions(
-        id_within_similarities,
+        id_train_within_similarities,
         ood_within_similarities,
-        ['ID Within-group', 'OOD Within-group'],
-        f'ID vs OOD Within-Group Similarities (Layer {args.layer})',
-        output_dir / f'id_vs_ood_within_group_layer{args.layer}.png'
+        ['ID_Train Within-group', 'OOD Within-group'],
+        f'ID_Train vs OOD Within-Group Similarities (Layer {target_layer})',
+        output_dir / f'id_train_vs_ood_within_group_layer{target_layer}.png'
+    )
+    
+    plot_comparison_distributions(
+        id_test_within_similarities,
+        ood_within_similarities,
+        ['ID Test Within-group', 'OOD Within-group'],
+        f'ID_Test vs OOD Within-Group Similarities (Layer {target_layer})',
+        output_dir / f'id_test_vs_ood_within_group_layer{target_layer}.png'
     )
 
     # ---------------- NONSENSE PLOTS ----------------
@@ -357,46 +465,61 @@ def main():
         nonsense_within_similarities,
         nonsense_between_similarities,
         ['Within-group', 'Between-group'],
-        f'Nonsense Similarity Distributions (Layer {args.layer})',
-        output_dir / f'nonsense_similarities_layer{args.layer}.png'
+        f'Nonsense Similarity Distributions (Layer {target_layer})',
+        output_dir / f'nonsense_similarities_layer{target_layer}.png'
     )
 
     if nonsense_all_similarities and len(nonsense_all_similarities) > 0:
         plot_similarity_distribution(
             nonsense_all_similarities,
-            f'Nonsense All-Vector Similarity Distribution (Layer {args.layer})',
-            output_dir / f'nonsense_all_similarities_layer{args.layer}.png',
+            f'Nonsense All-Vector Similarity Distribution (Layer {target_layer})',
+            output_dir / f'nonsense_all_similarities_layer{target_layer}.png',
             color='brown'
         )
 
     plot_similarity_distribution(
-        id_nonsense_similarities,
-        f'ID-Nonsense Mean Similarity Distribution (Layer {args.layer})',
-        output_dir / f'id_nonsense_mean_similarities_layer{args.layer}.png',
+        id_train_nonsense_similarities,
+        f'ID_Train-Nonsense Mean Similarity Distribution (Layer {target_layer})',
+        output_dir / f'id_train_nonsense_mean_similarities_layer{target_layer}.png',
+        color='orange'
+    )
+    
+    plot_similarity_distribution(
+        id_test_nonsense_similarities,
+        f'ID_Test-Nonsense Mean Similarity Distribution (Layer {target_layer})',
+        output_dir / f'id_test_nonsense_mean_similarities_layer{target_layer}.png',
         color='orange'
     )
 
     plot_similarity_distribution(
         ood_nonsense_similarities,
-        f'OOD-Nonsense Mean Similarity Distribution (Layer {args.layer})',
-        output_dir / f'ood_nonsense_mean_similarities_layer{args.layer}.png',
+        f'OOD-Nonsense Mean Similarity Distribution (Layer {target_layer})',
+        output_dir / f'ood_nonsense_mean_similarities_layer{target_layer}.png',
         color='teal'
     )
 
     plot_comparison_distributions(
-        id_within_similarities,
+        id_train_within_similarities,
         nonsense_within_similarities,
-        ['ID Within-group', 'Nonsense Within-group'],
-        f'ID vs Nonsense Within-Group Similarities (Layer {args.layer})',
-        output_dir / f'id_vs_nonsense_within_group_layer{args.layer}.png'
+        ['ID_Train Within-group', 'Nonsense Within-group'],
+        f'ID_Train vs Nonsense Within-Group Similarities (Layer {target_layer})',
+        output_dir / f'id_train_vs_nonsense_within_group_layer{target_layer}.png'
+    )
+    
+    plot_comparison_distributions(
+        id_test_within_similarities,
+        nonsense_within_similarities,
+        ['ID_Test Within-group', 'Nonsense Within-group'],
+        f'ID_Test vs Nonsense Within-Group Similarities (Layer {target_layer})',
+        output_dir / f'id_test_vs_nonsense_within_group_layer{target_layer}.png'
     )
 
     plot_comparison_distributions(
         ood_within_similarities,
         nonsense_within_similarities,
         ['OOD Within-group', 'Nonsense Within-group'],
-        f'OOD vs Nonsense Within-Group Similarities (Layer {args.layer})',
-        output_dir / f'ood_vs_nonsense_within_group_layer{args.layer}.png'
+        f'OOD vs Nonsense Within-Group Similarities (Layer {target_layer})',
+        output_dir / f'ood_vs_nonsense_within_group_layer{target_layer}.png'
     )
 
     print("Finished all computations and plots!")

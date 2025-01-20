@@ -24,6 +24,7 @@ def deduplicate_vectors(results):
     dedup_stats = defaultdict(lambda: defaultdict(int))
     deduplicated_results = defaultdict(list)
     
+    # ? 이거 믿을만한 threshold 인가?
     def vectors_equal(v1, v2):
         """Compare two vectors for equality with numerical tolerance."""
         if v1 is None or v2 is None:
@@ -83,18 +84,14 @@ def setup_logging(debug_mode):
     level = logging.DEBUG if debug_mode else logging.INFO
     logging.basicConfig(level=level, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def load_and_preprocess_data(train_path, valid_path, test_path):
+def load_and_preprocess_data(train_path, test_path):
     with open(train_path, 'r') as f:
         train_data = json.load(f)
     
     with open(test_path, 'r') as f:
         test_data = json.load(f)
-    
-    with open(valid_path, 'r') as f:
-        test_data.extend(json.load(f))
-        
-    
-    # Filter train data to include only instances with two entities in input_text
+
+    # Filter train data to include only instances with two entities in input_text (atomic fact)
     filtered_train_data = [
         instance for instance in train_data
         if re.match(r'^<e_\d+><r_\d+>$', instance['input_text'])
@@ -111,24 +108,36 @@ def load_and_preprocess_data(train_path, valid_path, test_path):
             logging.warning(f"Unexpected target format: {instance['target_text']}")
     
     # Group test data based on identified targets
+    grouped_id_train_data = defaultdict(list)
     grouped_id_test_data = defaultdict(list)
     grouped_ood_test_data = defaultdict(list)
     grouped_nonsense_test_data = defaultdict(list)
     
     for instance in test_data:
+        # Extract <e_N1><r_r1> from test data
         input_prefix = '><'.join(instance['input_text'].split('><')[:2]) + '>'
         if input_prefix.endswith('>>'):
             input_prefix=input_prefix[:-1]
-        identified_target = train_lookup.get(input_prefix, 'unknown')
+        identified_bridge_entity = train_lookup.get(input_prefix, 'unknown')
+        # Sanity Check 'unknown' is only for test_nonsenses
+        if identified_bridge_entity == 'unknown':
+            assert not re.match(r'^<e_\d+><r_\d+>$', input_prefix)
+        else:
+            assert re.match(r'^<e_\d+><r_\d+>$', input_prefix)
         
-        if instance.get('type', 'test_inferred_iid') in ['train_inferred', 'test_inferred_iid']:
-            grouped_id_test_data[identified_target].append(instance)
+        if instance.get('type') == None:
+            logging.warning(f"Unexpected data format - There is no type: {instance}")
+        elif instance['type'] == 'train_inferred':
+            grouped_id_train_data[identified_bridge_entity].append(instance)
+        elif instance['type'] == 'test_inferred_id':
+            grouped_id_test_data[identified_bridge_entity].append(instance)
         elif instance['type'] == 'test_inferred_ood':
-            grouped_ood_test_data[identified_target].append(instance)
+            grouped_ood_test_data[identified_bridge_entity].append(instance)
         elif instance['type'] == 'test_nonsenses':
+            # ?. 얘는 bridge entity로 뷴류하는 것 없이 그냥 다 저장하는 게 맞나?
             grouped_nonsense_test_data[instance['target_text']].append(instance)
     
-    return filtered_train_data, grouped_id_test_data, grouped_ood_test_data, grouped_nonsense_test_data
+    return filtered_train_data, grouped_id_train_data, grouped_id_test_data, grouped_ood_test_data, grouped_nonsense_test_data
 
 def get_hidden_states(model, input_text, layer_pos_pairs, tokenizer, device):
     inputs = tokenizer(input_text, return_tensors="pt").to(device)
@@ -238,98 +247,128 @@ def process_data_group(model, data_group, layer_pos_pairs, tokenizer, device):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base_dir", required=True)
     parser.add_argument("--ckpt", required=True, help="Path to the model checkpoint")
-    parser.add_argument("--train_dataset", required=True, help="Path to the train dataset")
-    parser.add_argument("--test_dataset", required=True, help="Path to the test dataset")
-    parser.add_argument("--valid_dataset", required=True, help="Path to the valid dataset")
     parser.add_argument("--layer_pos_pairs", required=True, help="List of (layer, position) tuples to evaluate")
     parser.add_argument("--save_dir", required=True, help="Directory to save the analysis results")
-    parser.add_argument("--id_save_fname", required=True, help="Filename to save the in-distribution analysis results")
-    parser.add_argument("--ood_save_fname", required=True, help="Filename to save the out-of-distribution analysis results")
-    parser.add_argument("--nonsense_save_fname", required=True, help="Filename to save the nonsense analysis results")
     parser.add_argument("--device", default="cuda:0", help="Device to run the model on")
+    parser.add_argument("--merge_id_data", action="store_true", help="Combine train_inferred and test_inferred_id in grouping stage")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode for verbose output")
     
     args = parser.parse_args()
     
     setup_logging(args.debug)
     
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
+    if args.ckpt.split("/")[-1] == "":
+        dataset, step = args.ckpt.split("/")[-3].split("_")[0], args.ckpt.split("/")[-2].split("-")[-1]
+    else:
+        dataset, step = args.ckpt.split("/")[-2].split("_")[0], args.ckpt.split("/")[-1].split("-")[-1]
+    
     logging.info("Loading model and tokenizer...")
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
-    model = GPT2LMHeadModel.from_pretrained(os.path.join(args.base_dir, args.ckpt)).to(device)
+    model = GPT2LMHeadModel.from_pretrained(os.path.join(base_dir, args.ckpt)).to(device)
     model.eval()
-    
-    tokenizer = GPT2Tokenizer.from_pretrained(os.path.join(args.base_dir, args.ckpt))
+    tokenizer = GPT2Tokenizer.from_pretrained(os.path.join(base_dir, args.ckpt))
     tokenizer.padding_side = "left" 
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.pad_token_id = tokenizer.eos_token_id
     model.config.pad_token_id = model.config.eos_token_id
     logging.info("Model and tokenizer loaded successfully")
     
-    filtered_train_data, grouped_id_test_data, grouped_ood_test_data, grouped_nonsense_test_data = load_and_preprocess_data(os.path.join(args.base_dir, args.train_dataset), os.path.join(args.base_dir, args.valid_dataset), os.path.join(args.base_dir, args.test_dataset))
+    data_dir = os.path.join(base_dir, "data", dataset)
+    if "inf" in dataset:
+        filtered_train_data, grouped_id_train_data, grouped_id_test_data, grouped_ood_test_data, grouped_nonsense_test_data = load_and_preprocess_data(os.path.join(data_dir, "atomic_facts.json"), os.path.join(data_dir, "test.json"))
+    else:
+        filtered_train_data, grouped_id_train_data, grouped_id_test_data, grouped_ood_test_data, grouped_nonsense_test_data = load_and_preprocess_data(os.path.join(data_dir, "train.json"), os.path.join(data_dir, "test.json"))
+    
     layer_pos_pairs = eval(args.layer_pos_pairs)
     logging.info(f"Layer position pairs: {layer_pos_pairs}")
     
     logging.info(f"Number of filtered train instances: {len(filtered_train_data)}")
+    logging.info(f"Number of unique ID train targets: {len(grouped_id_train_data)}")
     logging.info(f"Number of unique ID test targets: {len(grouped_id_test_data)}")
     logging.info(f"Number of unique OOD test targets: {len(grouped_ood_test_data)}")
     logging.info(f"Number of unique nonsense test targets: {len(grouped_nonsense_test_data)}")
     
+    logging.info("Processing in-distribution train data...")
+    id_train_results = process_data_group(model, grouped_id_train_data, layer_pos_pairs, tokenizer, device)
+    
     logging.info("Processing in-distribution test data...")
-    id_results = process_data_group(model, grouped_id_test_data, layer_pos_pairs, tokenizer, device)
+    id_test_results = process_data_group(model, grouped_id_test_data, layer_pos_pairs, tokenizer, device)
     
     logging.info("Processing out-of-distribution test data...")
-    ood_results = process_data_group(model, grouped_ood_test_data, layer_pos_pairs, tokenizer, device)
+    ood_test_results = process_data_group(model, grouped_ood_test_data, layer_pos_pairs, tokenizer, device)
     
     logging.info("Processing nonsense test data...")
     nonsense_results = process_data_group(model, grouped_nonsense_test_data, layer_pos_pairs, tokenizer, device)
     
     # Perform deduplication
-    logging.info("Performing deduplication for in-distribution data...")
-    id_results_dedup, id_dedup_stats = deduplicate_vectors(id_results)
+    logging.info("Performing deduplication for in-distribution train data...")
+    id_train_results_dedup, id_train_dedup_stats = deduplicate_vectors(id_train_results)
+    
+    logging.info("Performing deduplication for in-distribution test data...")
+    id_test_results_dedup, id_test_dedup_stats = deduplicate_vectors(id_test_results)
     
     logging.info("Performing deduplication for out-of-distribution data...")
-    ood_results_dedup, ood_dedup_stats = deduplicate_vectors(ood_results)
+    ood_results_dedup, ood_dedup_stats = deduplicate_vectors(ood_test_results)
     
     logging.info("Performing deduplication for nonsense data...")
     nonsense_results_dedup, nonsense_dedup_stats = deduplicate_vectors(nonsense_results)
     
-    os.makedirs(args.save_dir, exist_ok=True)
+    # ToDo : If the code is changed to support multiple layer_pos_pairs, should change save_dir for each layer_pos_pair
+    save_dir = os.path.join(args.save_dir, dataset, step)
+    os.makedirs(save_dir, exist_ok=True)
     
     # Save deduplicated results
-    id_save_path = os.path.join(args.save_dir, args.id_save_fname)
-    with open(id_save_path, 'w') as f:
-        json.dump(id_results_dedup, f)
-    logging.info(f"Deduplicated in-distribution analysis results saved to {id_save_path}")
+    id_train_save_path = os.path.join(save_dir, "id_train_dedup.json")
+    with open(id_train_save_path, 'w') as f:
+        json.dump(id_train_results_dedup, f)
+    logging.info(f"Deduplicated in-distribution analysis results saved to {id_train_save_path}")
     
-    ood_save_path = os.path.join(args.save_dir, args.ood_save_fname)
+    id_test_save_path = os.path.join(save_dir, "id_test_dedup.json")
+    with open(id_test_save_path, 'w') as f:
+        json.dump(id_test_results_dedup, f)
+    logging.info(f"Deduplicated in-distribution analysis results saved to {id_test_save_path}")
+    
+    ood_save_path = os.path.join(save_dir, "ood_dedup.json")
     with open(ood_save_path, 'w') as f:
         json.dump(ood_results_dedup, f)
     logging.info(f"Deduplicated out-of-distribution analysis results saved to {ood_save_path}")
     
-    nonsense_save_path = os.path.join(args.save_dir, args.nonsense_save_fname)
+    nonsense_save_path = os.path.join(save_dir, "nonsense_dedup.json")
     with open(nonsense_save_path, 'w') as f:
         json.dump(nonsense_results_dedup, f)
     logging.info(f"Deduplicated nonsense analysis results saved to {nonsense_save_path}")
     
     # Save deduplication statistics
-    id_stats_save_path = os.path.join(args.save_dir, f"dedup_stats_{args.id_save_fname}")
-    with open(id_stats_save_path, 'w') as f:
-        json.dump(id_dedup_stats, f)
+    id_train_stats_save_path = os.path.join(save_dir, f"dedup_stats_id_train_dedup.json")
+    with open(id_train_stats_save_path, 'w') as f:
+        json.dump(id_train_dedup_stats, f)
+        
+    id_test_stats_save_path = os.path.join(save_dir, f"dedup_stats_id_test_dedup.json")
+    with open(id_test_stats_save_path, 'w') as f:
+        json.dump(id_test_dedup_stats, f)
     
-    ood_stats_save_path = os.path.join(args.save_dir, f"dedup_stats_{args.ood_save_fname}")
+    ood_stats_save_path = os.path.join(save_dir, f"dedup_stats_ood_dedup.json")
     with open(ood_stats_save_path, 'w') as f:
         json.dump(ood_dedup_stats, f)
         
-    nonsense_stats_save_path = os.path.join(args.save_dir, f"dedup_stats_{args.nonsense_save_fname}")
+    nonsense_stats_save_path = os.path.join(save_dir, f"dedup_stats_nonsense_dedup.json")
     with open(nonsense_stats_save_path, 'w') as f:
         json.dump(nonsense_dedup_stats, f)
     
     # Log deduplication statistics and final counts
     logging.info("\nDeduplication statistics:")
-    logging.info("\nIn-distribution:")
-    for target, stats in id_dedup_stats.items():
+    logging.info("\nIn-distribution Train:")
+    for target, stats in id_train_dedup_stats.items():
+        logging.info(f"\nTarget: {target}")
+        for key, count in sorted(stats.items()):
+            layer, pos = key.replace('layer', '').split('_pos')
+            logging.info(f"  Layer {layer}, Position {pos}: Removed {count} duplicates")
+            
+    logging.info("\nIn-distribution Test:")
+    for target, stats in id_test_dedup_stats.items():
         logging.info(f"\nTarget: {target}")
         for key, count in sorted(stats.items()):
             layer, pos = key.replace('layer', '').split('_pos')
@@ -350,8 +389,11 @@ def main():
             logging.info(f"  Layer {layer}, Position {pos}: Removed {count} duplicates")
     
     logging.info("\nFinal counts after deduplication:")
-    logging.info("In-distribution:")
-    for target, instances in id_results_dedup.items():
+    logging.info("In-distribution Train:")
+    for target, instances in id_train_results_dedup.items():
+        logging.info(f"  {target}: {len(instances)}")
+    logging.info("In-distribution Test:")
+    for target, instances in id_test_results_dedup.items():
         logging.info(f"  {target}: {len(instances)}")
     logging.info("Out-of-distribution:")
     for target, instances in ood_results_dedup.items():
