@@ -1,11 +1,10 @@
-dir='/mnt/nas/hoyeon/collapse_analysis'
-# step=2500
-# step=31250
-step=75000
+DIR='/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/composition.2000.200.inf-controlled/test/(5,1)'
 
-python measure_metrics.py \
-    --id_file ${dir}/id_${step}_dedup.json \
-    --ood_file ${dir}/ood_${step}_dedup.json \
-    --nonsense_file ${dir}/nonsense_${step}_dedup.json \
-    --layer 5 \
-    --output_dir /mnt/nas/hoyeon/collapse_analysis/results/step${step}
+for step in 250 3500 30000 300000
+do
+    python measure_metrics_copy.py \
+        --id_train_file ${DIR}/${step}/id_dedup.json \
+        --ood_file ${DIR}/${step}/ood_dedup.json \
+        --nonsense_file ${DIR}/${step}/nonsense_dedup.json \
+        --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/composition.2000.200.inf-controlled/test/(5,1)/step${step}"
+done
