@@ -26,7 +26,8 @@ def build_dataset(
     train_ratio_per_b1b2=0.7,    # fraction of 4-tuples for each (b1,b2) that go to train
     max_notcov_out=5000,         # limit how many not-covered examples we keep
     seed=0,
-    outdir="data/many_to_one_types_with_type0"
+    outdir="data/many_to_one_types_with_type0",
+    same_f12=False               # <<<<< NEW PARAM: if True => f1 == f2
 ):
     """
     Builds a multi-hop (parallel+hierarchical) dataset with coverage-based splits:
@@ -35,8 +36,12 @@ def build_dataset(
         * "type_0" for covered
         * "type_1".."type_5" for not-covered
 
+    If 'same_f12=True', then f1 and f2 share the *identical* function mapping,
+    i.e. for any pair (x,y), the same dictionary is used for both subcomp1 and subcomp2.
+
     Steps:
-      1) Define partial f1,f2 for train vs. test domains (S_f1/T_f1, S_f2/T_f2).
+      1) Define partial f1, f2 for train vs. test domains (S_f1/T_f1, S_f2/T_f2),
+         or unify them into one function if same_f12=True.
       2) From (S_f1 x S_f2), pick some (b1,b2) to hold out => subcomp3 not in training => ensures type_3.
       3) For the remaining (b1,b2), do random-split => train vs covered.
       4) Build "not-covered" from everything else. 
@@ -49,7 +54,8 @@ def build_dataset(
     vocab = [f"<t_{i}>" for i in range(num_tokens)]
 
     # -------------
-    # Step A: f1,f2
+    # Step A: define partial f1, f2
+    #        possibly unify them if same_f12=True
     # -------------
     def sample_pairs(num_pairs):
         s = set()
@@ -62,8 +68,10 @@ def build_dataset(
                 out.append((x,y))
         return out
 
+    # S_f1, T_f1: disjoint sets
     S_f1 = sample_pairs(num_pairs_f1_train)
     T_f1 = sample_pairs(num_pairs_f1_test)
+    # S_f2, T_f2: disjoint sets
     S_f2 = sample_pairs(num_pairs_f2_train)
     T_f2 = sample_pairs(num_pairs_f2_test)
 
@@ -72,18 +80,48 @@ def build_dataset(
     B1_test  = B1_train
     B2_test  = B2_train
 
+    # We'll fill f1, f2 below. Possibly share them if same_f12=True
     f1 = {}
-    for (h1,h2) in S_f1:
-        f1[(h1,h2)] = random.choice(B1_train)
-    for (h1,h2) in T_f1:
-        f1[(h1,h2)] = random.choice(B1_test)
-
     f2 = {}
-    for (h3,h4) in S_f2:
-        f2[(h3,h4)] = random.choice(B2_train)
-    for (h3,h4) in T_f2:
-        f2[(h3,h4)] = random.choice(B2_test)
 
+    if not same_f12:
+        # --- Original approach: define f1, f2 separately
+        for (h1,h2) in S_f1:
+            f1[(h1,h2)] = random.choice(B1_train)
+        for (h1,h2) in T_f1:
+            f1[(h1,h2)] = random.choice(B1_test)
+
+        for (h3,h4) in S_f2:
+            f2[(h3,h4)] = random.choice(B2_train)
+        for (h3,h4) in T_f2:
+            f2[(h3,h4)] = random.choice(B2_test)
+
+    else:
+        # --- If same_f12=True: define a single function f12 for *all* pairs
+        # So we gather the union of all subcomp1 + subcomp2 pairs
+        # so that we can define a single function on them.
+        union_f12_train = S_f1 + S_f2
+        union_f12_test  = T_f1 + T_f2
+
+        f12 = {}
+
+        # For train domain pairs => map to B1_train (or B2_train, but it's the same set)
+        for (x,y) in union_f12_train:
+            if (x,y) not in f12:
+                f12[(x,y)] = random.choice(B1_train)  # many->one style
+
+        # For test domain pairs => map to B1_test
+        for (x,y) in union_f12_test:
+            if (x,y) not in f12:
+                f12[(x,y)] = random.choice(B1_test)
+
+        # Now set f1, f2 to the same dictionary f12
+        for (h1,h2) in (S_f1 + T_f1):
+            f1[(h1,h2)] = f12[(h1,h2)]
+        for (h3,h4) in (S_f2 + T_f2):
+            f2[(h3,h4)] = f12[(h3,h4)]
+
+    # f3 for the final composition (b1,b2)-> t
     f3 = {}
 
     # ----------------------------------------------------
@@ -147,18 +185,11 @@ def build_dataset(
     # from (S_f1 ∪ T_f1) x (S_f2 ∪ T_f2), 
     # exclude train & covered quadruples
     # -----------------------------
-    used_train_quads = set()
-    used_covered_quads = set()
-    # We'll store them while generating above, to avoid re-parsing
-
-    # Actually let's do a second pass
-    # re-build the sets from the splitted data
     train_4set = set()
     covered_4set = set()
 
-    # for (b1,b2) in allowed_b1b2
+    # for (b1,b2) in allowed_b1b2, replicate the random-split
     for (b1,b2) in allowed_b1b2:
-        # same logic
         quadruples = train_b1b2_dict[(b1,b2)]
         random.shuffle(quadruples)
         cutoff = int(round(train_ratio_per_b1b2*len(quadruples)))
@@ -169,10 +200,7 @@ def build_dataset(
         for q in cv:
             covered_4set.add(q)
 
-    # for (b1,b2) in held_out_b1b2 => none go to train or covered
-    # so they remain
-
-    # build the big union domain
+    # now gather all leftover combos
     S_f1_union = set(S_f1)|set(T_f1)
     S_f2_union = set(S_f2)|set(T_f2)
     all_notcov_candidates = []
@@ -194,17 +222,59 @@ def build_dataset(
         sc3 = ((b1,b2) in train_b1b2_set)
         return sc1, sc2, sc3
 
+
+    # ----------------------------------------------------------------------
+    # Explanation of Each "type"
+    # ----------------------------------------------------------------------
+    #
+    # "type_0": (Covered)
+    #   - All three subcomputations are covered by the training set:
+    #       subcomp1 = (h1,h2)
+    #       subcomp2 = (h3,h4)
+    #       subcomp3 = (b1,b2)
+    #     Hence, the final 4-token input is "in-coverage" (i.e., known subcomputations).
+    #
+    # "type_1": (Not-Covered)
+    #   - Exactly one of subcomp1 or subcomp2 is covered
+    #     (so either (h1,h2) or (h3,h4) appears in training, but not both),
+    #     AND subcomp3 = (b1,b2) is also covered in training.
+    #
+    # "type_2": (Not-Covered)
+    #   - Neither subcomp1 nor subcomp2 is covered,
+    #     BUT subcomp3 = (b1,b2) is covered.
+    #
+    # "type_3": (Not-Covered)
+    #   - Both subcomp1 and subcomp2 are covered individually,
+    #     BUT subcomp3 = (b1,b2) never appears in training.
+    #     (This usually arises when b1, b2 each appear separately in training
+    #      but the pair (b1,b2) is "held out".)
+    #
+    # "type_4": (Not-Covered)
+    #   - Exactly one of subcomp1 or subcomp2 is covered,
+    #     AND subcomp3 is NOT covered.
+    #
+    # "type_5": (Not-Covered)
+    #   - Neither subcomp1 nor subcomp2 is covered,
+    #     AND subcomp3 is also not covered.
+    #
+    # By default, "type_0" means "covered," and "type_1" through "type_5"
+    # indicate various ways that coverage can fail.
+
     def coverage_failure_type(sc1, sc2, sc3):
+        """
+        Returns 1..5 or 0 if fully covered.
+        """
         c_atomic = sum([sc1, sc2])
         if sc3:
+            # subcomp3 covered
             if c_atomic==1:
                 return 1
             elif c_atomic==0:
                 return 2
-            if c_atomic==2:
-                raise ValueError("This should not happen")
+            # if c_atomic==2 => fully covered => skip
             return 0
         else:
+            # subcomp3 not covered
             if c_atomic==2:
                 return 3
             elif c_atomic==1:
@@ -245,11 +315,11 @@ def build_dataset(
     # Step E: atomic facts for analysis
     # -----------------------------
     atomic_facts_1 = []
-    for (h1,h2), b1 in f1.items():
-        atomic_facts_1.append(form_item([vocab[h1],vocab[h2]], vocab[b1]))
+    for (h1,h2), b1val in f1.items():
+        atomic_facts_1.append(form_item([vocab[h1],vocab[h2]], vocab[b1val]))
     atomic_facts_2 = []
-    for (h3,h4), b2 in f2.items():
-        atomic_facts_2.append(form_item([vocab[h3],vocab[h4]], vocab[b2]))
+    for (h3,h4), b2val in f2.items():
+        atomic_facts_2.append(form_item([vocab[h3],vocab[h4]], vocab[b2val]))
     atomic_facts_3 = []
     for (b1,b2), tval in f3.items():
         atomic_facts_3.append(form_item([vocab[b1],vocab[b2]], vocab[tval]))
@@ -296,40 +366,64 @@ def build_dataset(
     print()
     print(f"  atomic_facts_1: {len(atomic_facts_1)}")
     print(f"  atomic_facts_2: {len(atomic_facts_2)}")
-    print(f"  atomic_facts_3: {len(atomic_facts_3)}\n")
+    print(f"  atomic_facts_3: {len(atomic_facts_3)}")
+    print(f"\n  (same_f12={same_f12})\n")
 
 
-# if __name__=="__main__":
-#     build_dataset_with_type0_in_test(
-#         num_tokens=1200,
-#         b1_size=100,
-#         b2_size=100,
-#         num_pairs_f1_train=2000,
-#         num_pairs_f1_test=500,
-#         num_pairs_f2_train=2000,
-#         num_pairs_f2_test=500,
-#         held_out_fraction=0.05,
-#         train_ratio_per_b1b2=0.7,
-#         max_notcov_out=3000,
-#         seed=0,
-#         outdir="data/many_to_one_types_with_type0"
-#     )
+# ----------------------------------------------------------------
+# Example usage
+# ----------------------------------------------------------------
+if __name__=="__main__":
+    """
+    Example: set `same_f12=True` if you want f1 == f2.
+    Otherwise, they remain separate functions.
+    """
+    # build_dataset(
+    #     num_tokens=200, 
+    #     b1_size=50,
+    #     b2_size=50,
+    #     num_pairs_f1_train=300,
+    #     num_pairs_f1_test=100,
+    #     num_pairs_f2_train=300,
+    #     num_pairs_f2_test=100,
+    #     held_out_fraction=0.10,
+    #     train_ratio_per_b1b2=0.7,
+    #     max_notcov_out=3000,
+    #     seed=0,
+    #     outdir="test_same_f12_false",
+    #     same_f12=False   # f1 != f2
+    # )
 
+    build_dataset(
+        num_tokens=200, 
+        b1_size=50,
+        b2_size=50,
+        num_pairs_f1_train=300,
+        num_pairs_f1_test=100,
+        num_pairs_f2_train=300,
+        num_pairs_f2_test=100,
+        held_out_fraction=0.10,
+        train_ratio_per_b1b2=0.7,
+        max_notcov_out=3000,
+        seed=42,
+        outdir="same_f12",
+        same_f12=True    # f1 == f2
+    )
 # ----------------------
 # Example usage
 # ----------------------
-if __name__=="__main__":
-    build_dataset(
-        num_tokens=200, 
-        b1_size=200,
-        b2_size=200,
-        num_pairs_f1_train=100,
-        num_pairs_f1_test=100,
-        num_pairs_f2_train=100,
-        num_pairs_f2_test=100,
-        held_out_fraction=0.15,  # ~8% of (b1,b2) in train domain => never used => type_3
-        train_ratio_per_b1b2=0.7,
-        max_notcov_out=30000,
-        seed=0,
-        outdir="test"
-    )
+# if __name__=="__main__":
+#     build_dataset(
+#         num_tokens=200, 
+#         b1_size=200,
+#         b2_size=200,
+#         num_pairs_f1_train=100,
+#         num_pairs_f1_test=100,
+#         num_pairs_f2_train=100,
+#         num_pairs_f2_test=100,
+#         held_out_fraction=0.15,  # ~8% of (b1,b2) in train domain => never used => type_3
+#         train_ratio_per_b1b2=0.7,
+#         max_notcov_out=30000,
+#         seed=0,
+#         outdir="test"
+#     )

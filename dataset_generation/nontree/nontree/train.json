@@ -1,0 +1,718 @@
+[
+  {
+    "input_text": "<t_21><t_52><t_30>",
+    "target_text": "<t_21><t_52><t_30><t_18></a>"
+  },
+  {
+    "input_text": "<t_39><t_82><t_91>",
+    "target_text": "<t_39><t_82><t_91><t_94></a>"
+  },
+  {
+    "input_text": "<t_74><t_83><t_24>",
+    "target_text": "<t_74><t_83><t_24><t_76></a>"
+  },
+  {
+    "input_text": "<t_93><t_66><t_81>",
+    "target_text": "<t_93><t_66><t_81><t_87></a>"
+  },
+  {
+    "input_text": "<t_56><t_35><t_92>",
+    "target_text": "<t_56><t_35><t_92><t_43></a>"
+  },
+  {
+    "input_text": "<t_14><t_23><t_47>",
+    "target_text": "<t_14><t_23><t_47><t_35></a>"
+  },
+  {
+    "input_text": "<t_82><t_61><t_43>",
+    "target_text": "<t_82><t_61><t_43><t_15></a>"
+  },
+  {
+    "input_text": "<t_85><t_49><t_77>",
+    "target_text": "<t_85><t_49><t_77><t_52></a>"
+  },
+  {
+    "input_text": "<t_23><t_18><t_15>",
+    "target_text": "<t_23><t_18><t_15><t_10></a>"
+  },
+  {
+    "input_text": "<t_9><t_98><t_51>",
+    "target_text": "<t_9><t_98><t_51><t_44></a>"
+  },
+  {
+    "input_text": "<t_93><t_38><t_85>",
+    "target_text": "<t_93><t_38><t_85><t_50></a>"
+  },
+  {
+    "input_text": "<t_80><t_80><t_83>",
+    "target_text": "<t_80><t_80><t_83><t_76></a>"
+  },
+  {
+    "input_text": "<t_2><t_17><t_61>",
+    "target_text": "<t_2><t_17><t_61><t_23></a>"
+  },
+  {
+    "input_text": "<t_45><t_37><t_82>",
+    "target_text": "<t_45><t_37><t_82><t_86></a>"
+  },
+  {
+    "input_text": "<t_0><t_37><t_59>",
+    "target_text": "<t_0><t_37><t_59><t_13></a>"
+  },
+  {
+    "input_text": "<t_6><t_69><t_79>",
+    "target_text": "<t_6><t_69><t_79><t_76></a>"
+  },
+  {
+    "input_text": "<t_47><t_17><t_89>",
+    "target_text": "<t_47><t_17><t_89><t_40></a>"
+  },
+  {
+    "input_text": "<t_73><t_37><t_87>",
+    "target_text": "<t_73><t_37><t_87><t_11></a>"
+  },
+  {
+    "input_text": "<t_3><t_19><t_35>",
+    "target_text": "<t_3><t_19><t_35><t_98></a>"
+  },
+  {
+    "input_text": "<t_59><t_17><t_30>",
+    "target_text": "<t_59><t_17><t_30><t_58></a>"
+  },
+  {
+    "input_text": "<t_53><t_87><t_23>",
+    "target_text": "<t_53><t_87><t_23><t_71></a>"
+  },
+  {
+    "input_text": "<t_7><t_96><t_0>",
+    "target_text": "<t_7><t_96><t_0><t_34></a>"
+  },
+  {
+    "input_text": "<t_57><t_16><t_77>",
+    "target_text": "<t_57><t_16><t_77><t_17></a>"
+  },
+  {
+    "input_text": "<t_69><t_5><t_82>",
+    "target_text": "<t_69><t_5><t_82><t_88></a>"
+  },
+  {
+    "input_text": "<t_32><t_47><t_73>",
+    "target_text": "<t_32><t_47><t_73><t_79></a>"
+  },
+  {
+    "input_text": "<t_74><t_0><t_56>",
+    "target_text": "<t_74><t_0><t_56><t_10></a>"
+  },
+  {
+    "input_text": "<t_95><t_0><t_55>",
+    "target_text": "<t_95><t_0><t_55><t_13></a>"
+  },
+  {
+    "input_text": "<t_40><t_5><t_56>",
+    "target_text": "<t_40><t_5><t_56><t_79></a>"
+  },
+  {
+    "input_text": "<t_69><t_24><t_19>",
+    "target_text": "<t_69><t_24><t_19><t_76></a>"
+  },
+  {
+    "input_text": "<t_45><t_5><t_18>",
+    "target_text": "<t_45><t_5><t_18><t_91></a>"
+  },
+  {
+    "input_text": "<t_97><t_4><t_81>",
+    "target_text": "<t_97><t_4><t_81><t_22></a>"
+  },
+  {
+    "input_text": "<t_31><t_78><t_89>",
+    "target_text": "<t_31><t_78><t_89><t_22></a>"
+  },
+  {
+    "input_text": "<t_27><t_43><t_5>",
+    "target_text": "<t_27><t_43><t_5><t_74></a>"
+  },
+  {
+    "input_text": "<t_96><t_69><t_78>",
+    "target_text": "<t_96><t_69><t_78><t_50></a>"
+  },
+  {
+    "input_text": "<t_85><t_49><t_28>",
+    "target_text": "<t_85><t_49><t_28><t_86></a>"
+  },
+  {
+    "input_text": "<t_21><t_74><t_4>",
+    "target_text": "<t_21><t_74><t_4><t_30></a>"
+  },
+  {
+    "input_text": "<t_45><t_27><t_8>",
+    "target_text": "<t_45><t_27><t_8><t_18></a>"
+  },
+  {
+    "input_text": "<t_87><t_32><t_54>",
+    "target_text": "<t_87><t_32><t_54><t_99></a>"
+  },
+  {
+    "input_text": "<t_84><t_34><t_97>",
+    "target_text": "<t_84><t_34><t_97><t_44></a>"
+  },
+  {
+    "input_text": "<t_58><t_97><t_7>",
+    "target_text": "<t_58><t_97><t_7><t_64></a>"
+  },
+  {
+    "input_text": "<t_42><t_75><t_42>",
+    "target_text": "<t_42><t_75><t_42><t_9></a>"
+  },
+  {
+    "input_text": "<t_73><t_95><t_52>",
+    "target_text": "<t_73><t_95><t_52><t_24></a>"
+  },
+  {
+    "input_text": "<t_90><t_67><t_57>",
+    "target_text": "<t_90><t_67><t_57><t_76></a>"
+  },
+  {
+    "input_text": "<t_12><t_76><t_67>",
+    "target_text": "<t_12><t_76><t_67><t_93></a>"
+  },
+  {
+    "input_text": "<t_33><t_16><t_8>",
+    "target_text": "<t_33><t_16><t_8><t_4></a>"
+  },
+  {
+    "input_text": "<t_56><t_65><t_8>",
+    "target_text": "<t_56><t_65><t_8><t_90></a>"
+  },
+  {
+    "input_text": "<t_59><t_87><t_71>",
+    "target_text": "<t_59><t_87><t_71><t_67></a>"
+  },
+  {
+    "input_text": "<t_88><t_75><t_54>",
+    "target_text": "<t_88><t_75><t_54><t_42></a>"
+  },
+  {
+    "input_text": "<t_77><t_57><t_19>",
+    "target_text": "<t_77><t_57><t_19><t_45></a>"
+  },
+  {
+    "input_text": "<t_31><t_35><t_12>",
+    "target_text": "<t_31><t_35><t_12><t_83></a>"
+  },
+  {
+    "input_text": "<t_10><t_18><t_87>",
+    "target_text": "<t_10><t_18><t_87><t_13></a>"
+  },
+  {
+    "input_text": "<t_5><t_83><t_15>",
+    "target_text": "<t_5><t_83><t_15><t_45></a>"
+  },
+  {
+    "input_text": "<t_48><t_35><t_71>",
+    "target_text": "<t_48><t_35><t_71><t_99></a>"
+  },
+  {
+    "input_text": "<t_70><t_51><t_22>",
+    "target_text": "<t_70><t_51><t_22><t_78></a>"
+  },
+  {
+    "input_text": "<t_51><t_37><t_19>",
+    "target_text": "<t_51><t_37><t_19><t_75></a>"
+  },
+  {
+    "input_text": "<t_40><t_62><t_88>",
+    "target_text": "<t_40><t_62><t_88><t_16></a>"
+  },
+  {
+    "input_text": "<t_51><t_61><t_53>",
+    "target_text": "<t_51><t_61><t_53><t_15></a>"
+  },
+  {
+    "input_text": "<t_79><t_96><t_20>",
+    "target_text": "<t_79><t_96><t_20><t_25></a>"
+  },
+  {
+    "input_text": "<t_13><t_26><t_85>",
+    "target_text": "<t_13><t_26><t_85><t_21></a>"
+  },
+  {
+    "input_text": "<t_20><t_88><t_64>",
+    "target_text": "<t_20><t_88><t_64><t_78></a>"
+  },
+  {
+    "input_text": "<t_31><t_70><t_0>",
+    "target_text": "<t_31><t_70><t_0><t_92></a>"
+  },
+  {
+    "input_text": "<t_83><t_51><t_91>",
+    "target_text": "<t_83><t_51><t_91><t_54></a>"
+  },
+  {
+    "input_text": "<t_14><t_11><t_81>",
+    "target_text": "<t_14><t_11><t_81><t_42></a>"
+  },
+  {
+    "input_text": "<t_46><t_45><t_66>",
+    "target_text": "<t_46><t_45><t_66><t_84></a>"
+  },
+  {
+    "input_text": "<t_26><t_68><t_67>",
+    "target_text": "<t_26><t_68><t_67><t_91></a>"
+  },
+  {
+    "input_text": "<t_55><t_88><t_3>",
+    "target_text": "<t_55><t_88><t_3><t_11></a>"
+  },
+  {
+    "input_text": "<t_87><t_79><t_14>",
+    "target_text": "<t_87><t_79><t_14><t_73></a>"
+  },
+  {
+    "input_text": "<t_2><t_17><t_22>",
+    "target_text": "<t_2><t_17><t_22><t_94></a>"
+  },
+  {
+    "input_text": "<t_8><t_49><t_92>",
+    "target_text": "<t_8><t_49><t_92><t_71></a>"
+  },
+  {
+    "input_text": "<t_95><t_12><t_24>",
+    "target_text": "<t_95><t_12><t_24><t_85></a>"
+  },
+  {
+    "input_text": "<t_4><t_19><t_79>",
+    "target_text": "<t_4><t_19><t_79><t_2></a>"
+  },
+  {
+    "input_text": "<t_19><t_90><t_71>",
+    "target_text": "<t_19><t_90><t_71><t_71></a>"
+  },
+  {
+    "input_text": "<t_57><t_68><t_6>",
+    "target_text": "<t_57><t_68><t_6><t_59></a>"
+  },
+  {
+    "input_text": "<t_16><t_21><t_19>",
+    "target_text": "<t_16><t_21><t_19><t_68></a>"
+  },
+  {
+    "input_text": "<t_92><t_93><t_41>",
+    "target_text": "<t_92><t_93><t_41><t_41></a>"
+  },
+  {
+    "input_text": "<t_15><t_80><t_96>",
+    "target_text": "<t_15><t_80><t_96><t_45></a>"
+  },
+  {
+    "input_text": "<t_94><t_67><t_72>",
+    "target_text": "<t_94><t_67><t_72><t_68></a>"
+  },
+  {
+    "input_text": "<t_38><t_87><t_66>",
+    "target_text": "<t_38><t_87><t_66><t_71></a>"
+  },
+  {
+    "input_text": "<t_35><t_39><t_23>",
+    "target_text": "<t_35><t_39><t_23><t_96></a>"
+  },
+  {
+    "input_text": "<t_62><t_58><t_44>",
+    "target_text": "<t_62><t_58><t_44><t_9></a>"
+  },
+  {
+    "input_text": "<t_5><t_75><t_54>",
+    "target_text": "<t_5><t_75><t_54><t_42></a>"
+  },
+  {
+    "input_text": "<t_92><t_25><t_42>",
+    "target_text": "<t_92><t_25><t_42><t_41></a>"
+  },
+  {
+    "input_text": "<t_42><t_73><t_73>",
+    "target_text": "<t_42><t_73><t_73><t_85></a>"
+  },
+  {
+    "input_text": "<t_73><t_73><t_68>",
+    "target_text": "<t_73><t_73><t_68><t_24></a>"
+  },
+  {
+    "input_text": "<t_88><t_21><t_22>",
+    "target_text": "<t_88><t_21><t_22><t_36></a>"
+  },
+  {
+    "input_text": "<t_58><t_9><t_47>",
+    "target_text": "<t_58><t_9><t_47><t_2></a>"
+  },
+  {
+    "input_text": "<t_91><t_52><t_89>",
+    "target_text": "<t_91><t_52><t_89><t_35></a>"
+  },
+  {
+    "input_text": "<t_34><t_32><t_19>",
+    "target_text": "<t_34><t_32><t_19><t_67></a>"
+  },
+  {
+    "input_text": "<t_91><t_12><t_27>",
+    "target_text": "<t_91><t_12><t_27><t_55></a>"
+  },
+  {
+    "input_text": "<t_22><t_95><t_92>",
+    "target_text": "<t_22><t_95><t_92><t_71></a>"
+  },
+  {
+    "input_text": "<t_47><t_84><t_63>",
+    "target_text": "<t_47><t_84><t_63><t_45></a>"
+  },
+  {
+    "input_text": "<t_29><t_44><t_36>",
+    "target_text": "<t_29><t_44><t_36><t_94></a>"
+  },
+  {
+    "input_text": "<t_18><t_86><t_91>",
+    "target_text": "<t_18><t_86><t_91><t_76></a>"
+  },
+  {
+    "input_text": "<t_88><t_72><t_51>",
+    "target_text": "<t_88><t_72><t_51><t_49></a>"
+  },
+  {
+    "input_text": "<t_90><t_97><t_13>",
+    "target_text": "<t_90><t_97><t_13><t_43></a>"
+  },
+  {
+    "input_text": "<t_20><t_79><t_45>",
+    "target_text": "<t_20><t_79><t_45><t_74></a>"
+  },
+  {
+    "input_text": "<t_16><t_35><t_47>",
+    "target_text": "<t_16><t_35><t_47><t_85></a>"
+  },
+  {
+    "input_text": "<t_67><t_32><t_31>",
+    "target_text": "<t_67><t_32><t_31><t_84></a>"
+  },
+  {
+    "input_text": "<t_12><t_11><t_1>",
+    "target_text": "<t_12><t_11><t_1><t_28></a>"
+  },
+  {
+    "input_text": "<t_42><t_96><t_68>",
+    "target_text": "<t_42><t_96><t_68><t_33></a>"
+  },
+  {
+    "input_text": "<t_49><t_48><t_64>",
+    "target_text": "<t_49><t_48><t_64><t_50></a>"
+  },
+  {
+    "input_text": "<t_3><t_0><t_53>",
+    "target_text": "<t_3><t_0><t_53><t_96></a>"
+  },
+  {
+    "input_text": "<t_44><t_31><t_3>",
+    "target_text": "<t_44><t_31><t_3><t_27></a>"
+  },
+  {
+    "input_text": "<t_27><t_68><t_86>",
+    "target_text": "<t_27><t_68><t_86><t_47></a>"
+  },
+  {
+    "input_text": "<t_7><t_71><t_8>",
+    "target_text": "<t_7><t_71><t_8><t_47></a>"
+  },
+  {
+    "input_text": "<t_9><t_24><t_52>",
+    "target_text": "<t_9><t_24><t_52><t_75></a>"
+  },
+  {
+    "input_text": "<t_62><t_24><t_84>",
+    "target_text": "<t_62><t_24><t_84><t_21></a>"
+  },
+  {
+    "input_text": "<t_3><t_23><t_35>",
+    "target_text": "<t_3><t_23><t_35><t_44></a>"
+  },
+  {
+    "input_text": "<t_69><t_34><t_29>",
+    "target_text": "<t_69><t_34><t_29><t_30></a>"
+  },
+  {
+    "input_text": "<t_61><t_97><t_76>",
+    "target_text": "<t_61><t_97><t_76><t_39></a>"
+  },
+  {
+    "input_text": "<t_24><t_70><t_32>",
+    "target_text": "<t_24><t_70><t_32><t_1></a>"
+  },
+  {
+    "input_text": "<t_45><t_26><t_24>",
+    "target_text": "<t_45><t_26><t_24><t_13></a>"
+  },
+  {
+    "input_text": "<t_34><t_6><t_89>",
+    "target_text": "<t_34><t_6><t_89><t_47></a>"
+  },
+  {
+    "input_text": "<t_53><t_26><t_17>",
+    "target_text": "<t_53><t_26><t_17><t_42></a>"
+  },
+  {
+    "input_text": "<t_59><t_20><t_0>",
+    "target_text": "<t_59><t_20><t_0><t_82></a>"
+  },
+  {
+    "input_text": "<t_96><t_77><t_57>",
+    "target_text": "<t_96><t_77><t_57><t_14></a>"
+  },
+  {
+    "input_text": "<t_61><t_74><t_28>",
+    "target_text": "<t_61><t_74><t_28><t_21></a>"
+  },
+  {
+    "input_text": "<t_11><t_39><t_2>",
+    "target_text": "<t_11><t_39><t_2><t_31></a>"
+  },
+  {
+    "input_text": "<t_3><t_28><t_50>",
+    "target_text": "<t_3><t_28><t_50><t_17></a>"
+  },
+  {
+    "input_text": "<t_34><t_78><t_12>",
+    "target_text": "<t_34><t_78><t_12><t_15></a>"
+  },
+  {
+    "input_text": "<t_98><t_19><t_72>",
+    "target_text": "<t_98><t_19><t_72><t_54></a>"
+  },
+  {
+    "input_text": "<t_30><t_10><t_58>",
+    "target_text": "<t_30><t_10><t_58><t_16></a>"
+  },
+  {
+    "input_text": "<t_45><t_41><t_44>",
+    "target_text": "<t_45><t_41><t_44><t_72></a>"
+  },
+  {
+    "input_text": "<t_35><t_53><t_86>",
+    "target_text": "<t_35><t_53><t_86><t_65></a>"
+  },
+  {
+    "input_text": "<t_36><t_73><t_73>",
+    "target_text": "<t_36><t_73><t_73><t_94></a>"
+  },
+  {
+    "input_text": "<t_64><t_57><t_49>",
+    "target_text": "<t_64><t_57><t_49><t_92></a>"
+  },
+  {
+    "input_text": "<t_8><t_53><t_3>",
+    "target_text": "<t_8><t_53><t_3><t_69></a>"
+  },
+  {
+    "input_text": "<t_52><t_47><t_32>",
+    "target_text": "<t_52><t_47><t_32><t_60></a>"
+  },
+  {
+    "input_text": "<t_9><t_97><t_10>",
+    "target_text": "<t_9><t_97><t_10><t_66></a>"
+  },
+  {
+    "input_text": "<t_33><t_86><t_90>",
+    "target_text": "<t_33><t_86><t_90><t_17></a>"
+  },
+  {
+    "input_text": "<t_68><t_99><t_18>",
+    "target_text": "<t_68><t_99><t_18><t_9></a>"
+  },
+  {
+    "input_text": "<t_53><t_34><t_37>",
+    "target_text": "<t_53><t_34><t_37><t_72></a>"
+  },
+  {
+    "input_text": "<t_43><t_91><t_69>",
+    "target_text": "<t_43><t_91><t_69><t_61></a>"
+  },
+  {
+    "input_text": "<t_14><t_63><t_61>",
+    "target_text": "<t_14><t_63><t_61><t_76></a>"
+  },
+  {
+    "input_text": "<t_93><t_77><t_55>",
+    "target_text": "<t_93><t_77><t_55><t_54></a>"
+  },
+  {
+    "input_text": "<t_67><t_6><t_40>",
+    "target_text": "<t_67><t_6><t_40><t_63></a>"
+  },
+  {
+    "input_text": "<t_44><t_42><t_38>",
+    "target_text": "<t_44><t_42><t_38><t_57></a>"
+  },
+  {
+    "input_text": "<t_9><t_77><t_52>",
+    "target_text": "<t_9><t_77><t_52><t_32></a>"
+  },
+  {
+    "input_text": "<t_96><t_53><t_1>",
+    "target_text": "<t_96><t_53><t_1><t_32></a>"
+  },
+  {
+    "input_text": "<t_24><t_35><t_39>",
+    "target_text": "<t_24><t_35><t_39><t_58></a>"
+  },
+  {
+    "input_text": "<t_12><t_76><t_88>",
+    "target_text": "<t_12><t_76><t_88><t_31></a>"
+  },
+  {
+    "input_text": "<t_28><t_83><t_86>",
+    "target_text": "<t_28><t_83><t_86><t_60></a>"
+  },
+  {
+    "input_text": "<t_24><t_35><t_72>",
+    "target_text": "<t_24><t_35><t_72><t_70></a>"
+  },
+  {
+    "input_text": "<t_49><t_68><t_99>",
+    "target_text": "<t_49><t_68><t_99><t_96></a>"
+  },
+  {
+    "input_text": "<t_76><t_20><t_59>",
+    "target_text": "<t_76><t_20><t_59><t_65></a>"
+  },
+  {
+    "input_text": "<t_85><t_16><t_49>",
+    "target_text": "<t_85><t_16><t_49><t_23></a>"
+  },
+  {
+    "input_text": "<t_87><t_42><t_46>",
+    "target_text": "<t_87><t_42><t_46><t_46></a>"
+  },
+  {
+    "input_text": "<t_19><t_60><t_41>",
+    "target_text": "<t_19><t_60><t_41><t_18></a>"
+  },
+  {
+    "input_text": "<t_59><t_13><t_73>",
+    "target_text": "<t_59><t_13><t_73><t_11></a>"
+  },
+  {
+    "input_text": "<t_22><t_43><t_52>",
+    "target_text": "<t_22><t_43><t_52><t_75></a>"
+  },
+  {
+    "input_text": "<t_16><t_12><t_84>",
+    "target_text": "<t_16><t_12><t_84><t_79></a>"
+  },
+  {
+    "input_text": "<t_77><t_93><t_4>",
+    "target_text": "<t_77><t_93><t_4><t_74></a>"
+  },
+  {
+    "input_text": "<t_67><t_98><t_43>",
+    "target_text": "<t_67><t_98><t_43><t_3></a>"
+  },
+  {
+    "input_text": "<t_89><t_17><t_70>",
+    "target_text": "<t_89><t_17><t_70><t_91></a>"
+  },
+  {
+    "input_text": "<t_89><t_3><t_29>",
+    "target_text": "<t_89><t_3><t_29><t_67></a>"
+  },
+  {
+    "input_text": "<t_11><t_89><t_98>",
+    "target_text": "<t_11><t_89><t_98><t_11></a>"
+  },
+  {
+    "input_text": "<t_97><t_24><t_19>",
+    "target_text": "<t_97><t_24><t_19><t_76></a>"
+  },
+  {
+    "input_text": "<t_30><t_87><t_54>",
+    "target_text": "<t_30><t_87><t_54><t_24></a>"
+  },
+  {
+    "input_text": "<t_10><t_93><t_97>",
+    "target_text": "<t_10><t_93><t_97><t_63></a>"
+  },
+  {
+    "input_text": "<t_37><t_84><t_60>",
+    "target_text": "<t_37><t_84><t_60><t_29></a>"
+  },
+  {
+    "input_text": "<t_97><t_42><t_80>",
+    "target_text": "<t_97><t_42><t_80><t_12></a>"
+  },
+  {
+    "input_text": "<t_21><t_85><t_24>",
+    "target_text": "<t_21><t_85><t_24><t_29></a>"
+  },
+  {
+    "input_text": "<t_57><t_66><t_12>",
+    "target_text": "<t_57><t_66><t_12><t_9></a>"
+  },
+  {
+    "input_text": "<t_5><t_68><t_61>",
+    "target_text": "<t_5><t_68><t_61><t_4></a>"
+  },
+  {
+    "input_text": "<t_57><t_80><t_77>",
+    "target_text": "<t_57><t_80><t_77><t_3></a>"
+  },
+  {
+    "input_text": "<t_98><t_25><t_50>",
+    "target_text": "<t_98><t_25><t_50><t_74></a>"
+  },
+  {
+    "input_text": "<t_81><t_11><t_20>",
+    "target_text": "<t_81><t_11><t_20><t_42></a>"
+  },
+  {
+    "input_text": "<t_48><t_99><t_39>",
+    "target_text": "<t_48><t_99><t_39><t_35></a>"
+  },
+  {
+    "input_text": "<t_88><t_35><t_32>",
+    "target_text": "<t_88><t_35><t_32><t_47></a>"
+  },
+  {
+    "input_text": "<t_35><t_7><t_54>",
+    "target_text": "<t_35><t_7><t_54><t_25></a>"
+  },
+  {
+    "input_text": "<t_5><t_83><t_48>",
+    "target_text": "<t_5><t_83><t_48><t_99></a>"
+  },
+  {
+    "input_text": "<t_59><t_63><t_45>",
+    "target_text": "<t_59><t_63><t_45><t_8></a>"
+  },
+  {
+    "input_text": "<t_49><t_66><t_9>",
+    "target_text": "<t_49><t_66><t_9><t_3></a>"
+  },
+  {
+    "input_text": "<t_70><t_77><t_96>",
+    "target_text": "<t_70><t_77><t_96><t_90></a>"
+  },
+  {
+    "input_text": "<t_87><t_62><t_20>",
+    "target_text": "<t_87><t_62><t_20><t_87></a>"
+  },
+  {
+    "input_text": "<t_18><t_25><t_47>",
+    "target_text": "<t_18><t_25><t_47><t_61></a>"
+  },
+  {
+    "input_text": "<t_2><t_15><t_7>",
+    "target_text": "<t_2><t_15><t_7><t_59></a>"
+  },
+  {
+    "input_text": "<t_54><t_1><t_95>",
+    "target_text": "<t_54><t_1><t_95><t_54></a>"
+  },
+  {
+    "input_text": "<t_38><t_80><t_64>",
+    "target_text": "<t_38><t_80><t_64><t_22></a>"
+  }
+]
