@@ -277,6 +277,7 @@ def main():
     logging.info("Model and tokenizer loaded successfully")
     
     data_dir = os.path.join(base_dir, "data", dataset)
+    # Todo : Using --merge_id_data parameter
     if "inf" in dataset:
         filtered_train_data, grouped_id_train_data, grouped_id_test_data, grouped_ood_test_data, grouped_nonsense_test_data = load_and_preprocess_data(os.path.join(data_dir, "atomic_facts.json"), os.path.join(data_dir, "test.json"))
     else:
