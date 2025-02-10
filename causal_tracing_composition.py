@@ -1,5 +1,5 @@
 import numpy as np
-import json, jsonlines
+import json
 import matplotlib.pyplot as plt
 from eval_qa import eval_file, eval_items
 import os
@@ -114,7 +114,6 @@ def main():
     results = {}
     
     split = args.data_type
-    # rand_inds = np.random.choice(len(d[split]), 300, replace=False).tolist()
     target_layer = args.target_layer
     total_layer = args.num_layer
     
