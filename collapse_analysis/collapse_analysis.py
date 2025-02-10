@@ -300,14 +300,7 @@ def main():
             os.path.join(data_dir, "test.json"),
             merge_id_data=args.merge_id_data
         )
-    # if "inf" in dataset:
-    #     filtered_train_data, grouped_id_train_data, grouped_id_test_data, grouped_ood_test_data, grouped_nonsense_test_data = load_and_preprocess_data(os.path.join(data_dir, "atomic_facts.json"), os.path.join(data_dir, "test.json"))
-    # else:
-    #     filtered_train_data, grouped_id_train_data, grouped_id_test_data, grouped_ood_test_data, grouped_nonsense_test_data = load_and_preprocess_data(os.path.join(data_dir, "train.json"), os.path.join(data_dir, "test.json"))
-
-    layer_pos_pairs = eval(args.layer_pos_pairs)
-    logging.info(f"Layer position pairs: {layer_pos_pairs}")
-
+        
     logging.info(f"Number of filtered train instances: {len(filtered_train_data)}")
     if args.merge_id_data:
         logging.info(f"Number of unique ID targets: {len(id_data)}")
@@ -317,6 +310,20 @@ def main():
         logging.info(f"Number of unique ID test targets: {len(grouped_id_test_data)}")
     logging.info(f"Number of unique OOD test targets: {len(grouped_ood_test_data)}")
     logging.info(f"Number of unique nonsense test targets: {len(grouped_nonsense_test_data)}")
+
+    layer_pos_pairs = eval(args.layer_pos_pairs)
+    logging.info(f"Layer position pairs: {layer_pos_pairs}")
+    
+    # ToDo : If the code is changed to support multiple layer_pos_pairs, should change save_dir for each layer_pos_pair
+    if args.merge_id_data:
+        save_dir = os.path.join(args.save_dir, dataset, "merged_id", str(layer_pos_pairs[0]).replace(" ", ""), step)
+    else:
+        save_dir = os.path.join(args.save_dir, dataset, str(layer_pos_pairs[0]).replace(" ", ""), step)
+    if os.path.exists(save_dir):
+        logging.info(f"{save_dir} already exist!!!")
+        return
+    else:
+        os.makedirs(save_dir, exist_ok=True)
 
     # save and deduplicate hidden state 
     if args.merge_id_data:
@@ -345,10 +352,6 @@ def main():
     ood_results_dedup, ood_dedup_stats = deduplicate_vectors(ood_test_results)
     logging.info("Performing deduplication for nonsense data...")
     nonsense_results_dedup, nonsense_dedup_stats = deduplicate_vectors(nonsense_results)
-
-    # ToDo : If the code is changed to support multiple layer_pos_pairs, should change save_dir for each layer_pos_pair
-    save_dir = os.path.join(args.save_dir, dataset, step)
-    os.makedirs(save_dir, exist_ok=True)
 
     # Save deduplicated results
     if args.merge_id_data:
