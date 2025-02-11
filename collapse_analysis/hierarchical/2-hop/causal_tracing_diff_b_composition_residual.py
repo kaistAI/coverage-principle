@@ -326,16 +326,20 @@ def main():
         print("\nnow checkpoint", checkpoint)
         results_4_ckpt = {}
         for data_type, entries in tqdm(results[checkpoint].items()):
+            total_num = 0
             result_4_type = {}
-            result_4_type["total_num"] = len(entries)
             for i in range(1,8):
                 result_4_type[f"r1_{i}"] = 0
             for entry in entries:
+                if entry["rank_before_real_t"] > entry["rank_before_changed_t"]:
+                    continue
+                total_num += 1
                 for i in range(1,8):
                     if entry[f"r1_{i}_real_t"] < entry[f"r1_{i}_changed_t"]:
                         result_4_type[f"r1_{i}"] += 1
                     # if entry["rank_before"] != entry[f"r1_{i}"]:
                     #     result_4_type[f"r1_{i}"] += 1
+            result_4_type["total_num"] = total_num
             results_4_ckpt[data_type] = result_4_type
         refined_results[checkpoint] = results_4_ckpt
 
