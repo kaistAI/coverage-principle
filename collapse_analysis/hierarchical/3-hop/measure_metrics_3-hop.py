@@ -389,8 +389,6 @@ def main():
                         help="Perform PCA globally or only local sample bridging groups")
     parser.add_argument('--pca_m', type=int, default=5)
     parser.add_argument('--pca_n', type=int, default=20)
-
-    
     
     args = parser.parse_args()
     

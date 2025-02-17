@@ -11,7 +11,7 @@ import re
 
 def setup_logging(debug_mode):
     level = logging.DEBUG if debug_mode else logging.INFO
-    logging.basicConfig(level=level, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.basicConfig(level=level, format='%(levelname)s - %(message)s')
 
 
 def load_and_preprocess_data(train_path, test_path, merge_id_data=False):
@@ -237,7 +237,7 @@ def main():
     tokenizer.pad_token_id = tokenizer.eos_token_id
     model.config.pad_token_id = model.config.eos_token_id
     logging.info("Model and tokenizer loaded successfully")
-
+    
     data_dir = os.path.join(base_dir, "data", dataset)
     if "inf" in dataset:
         filtered_train_data, id_data, grouped_ood_test_data, grouped_nonsense_test_data = load_and_preprocess_data(

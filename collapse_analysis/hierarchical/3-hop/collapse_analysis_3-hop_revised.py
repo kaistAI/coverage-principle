@@ -3,10 +3,15 @@ import torch
 import json
 from tqdm import tqdm
 import os
-from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
+from transformers import GPT2LMHeadModel, GPT2Tokenizer
 import logging
 from collections import defaultdict
 import re
+
+
+def setup_logging(debug_mode):
+    level = logging.DEBUG if debug_mode else logging.INFO
+    logging.basicConfig(level=level, format='%(levelname)s - %(message)s')
 
 ###############################################################################
 # 1) Loading atomic facts for 3-hop: (h1,h2)->b1, (b1,h3)->b2, (b2,h4)->t
@@ -70,8 +75,9 @@ def group_data_by_b1(examples, f1_dict):
         inp_tokens = parse_3hop_input(ex["input_text"])
         if not inp_tokens:
             continue
-        h1,h2,h3,h4 = inp_tokens
-        b1 = f1_dict.get((h1,h2), "unknown")
+        h1, h2, _, _ = inp_tokens
+        b1 = f1_dict.get((h1, h2), "unknown")
+        assert b1 != "unknown"
         group_dict[b1].append(ex)
     return dict(group_dict)
 
@@ -87,12 +93,11 @@ def group_data_by_b2(examples, f1_dict, f2_dict):
         inp_tokens = parse_3hop_input(ex["input_text"])
         if not inp_tokens:
             continue
-        h1,h2,h3,h4 = inp_tokens
-        b1 = f1_dict.get((h1,h2), "unknown")
-        if b1 == "unknown":
-            b2 = "unknown"
-        else:
-            b2 = f2_dict.get((b1,h3), "unknown")
+        h1, h2, h3, _ = inp_tokens
+        b1 = f1_dict.get((h1, h2), "unknown")
+        assert b1 != "unknown"
+        b2 = f2_dict.get((b1, h3), "unknown")
+        assert b2 != "unknown"
         group_dict[b2].append(ex)
     return dict(group_dict)
 
@@ -108,17 +113,13 @@ def group_data_by_t(examples, f1_dict, f2_dict, f3_dict):
         inp_tokens = parse_3hop_input(ex["input_text"])
         if not inp_tokens:
             continue
-        h1,h2,h3,h4 = inp_tokens
-        b1 = f1_dict.get((h1,h2), "unknown")
-        if b1 == "unknown":
-            b2 = "unknown"
-        else:
-            b2 = f2_dict.get((b1,h3), "unknown")
-            
-        if b2 == "unknown":
-            t ="unknown"
-        else:
-            t = f3_dict.get((b2,h4), "unknown")
+        h1, h2, h3, h4 = inp_tokens
+        b1 = f1_dict.get((h1, h2), "unknown")
+        assert b1 != "unknown"
+        b2 = f2_dict.get((b1, h3), "unknown")
+        assert b2 != "unknown"
+        t = f3_dict.get((b2, h4), "unknown")
+        assert t != "unknown"
         group_dict[t].append(ex)
     return dict(group_dict)
 
@@ -186,10 +187,6 @@ def deduplicate_vectors(results):
     final_stats = {k: dict(v) for k,v in dedup_stats.items()}
     return dict(deduplicated_results), final_stats
 
-def setup_logging(debug_mode):
-    level = logging.DEBUG if debug_mode else logging.INFO
-    logging.basicConfig(level=level, format="%(asctime)s - %(levelname)s - %(message)s")
-
 def load_and_preprocess_data(f1_dict, f2_dict, f3_dict, test_path, idx):
     """
     Original approach from parallel version:
@@ -212,8 +209,20 @@ def load_and_preprocess_data(f1_dict, f2_dict, f3_dict, test_path, idx):
             id_train_data.append(d)
         elif d['type'] == 'type_0':
             id_test_data.append(d)
+        elif d['type'] in set([f"type_{i}" for i in range(1, 8)]):
+            if idx == 1:
+                if d['type'] in ['type_1', 'type_2', 'type_3', 'type_4']:
+                    ood_test_data.append(d)
+            elif idx == 2:
+                if d['type'] in ['type_1', 'type_2', 'type_5', 'type_6']:
+                    ood_test_data.append(d)
+            elif idx == 3:
+                if d['type'] in ['type_1', 'type_3', 'type_5', 'type_7']:
+                    ood_test_data.append(d)
+            else:
+                raise NotImplementedError(f"idx is error : {idx}")
         else:
-            ood_test_data.append(d)
+            raise NotImplementedError("Invalid coverage type")
             
     if idx==1:
         grouped_id_train_data = group_data_by_b1(id_train_data, f1_dict)
@@ -231,54 +240,6 @@ def load_and_preprocess_data(f1_dict, f2_dict, f3_dict, test_path, idx):
         grouped_ood_test_data = group_data_by_t(ood_test_data, f1_dict, f2_dict, f3_dict)
     else:
         raise NotImplementedError
-
-    # Filter train data (atomic facts) => 2 tokens
-    # filtered_train_data = [
-    #     inst for inst in train_data
-    #     if re.match(r'^<t_\d+><t_\d+>$', inst['input_text'])
-    # ]
-
-    # train_lookup = {}
-    # for inst in filtered_train_data:
-    #     inp_text = inst['input_text']
-    #     tgts = re.findall(r'<t_\d+>', inst['target_text'])
-    #     if len(tgts) == 3:
-    #         # e.g. <t_h1><t_h2><t_b1>
-    #         train_lookup[inp_text] = tgts[2]
-    #     else:
-    #         logging.warning(f"Unexpected target: {inst['target_text']}")
-
-    # grouped_id_train_data = defaultdict(list)
-    # grouped_id_test_data  = defaultdict(list)
-    # grouped_ood_test_data = defaultdict(list)
-    # grouped_nonsense_test_data = defaultdict(list)
-    
-    # for instance in test_data:
-    #     if 'type' not in instance:
-    #         logging.warning(f"No type in instance: {instance}")
-    #         continue
-    #     # input_prefix logic
-    #     ip_list = instance['input_text'].split('><')
-    #     if first:
-    #         input_prefix = '><'.join(ip_list[:2]) + '>'
-    #     else:
-    #         input_prefix = '<' + '><'.join(ip_list[2:])
-    #     if input_prefix.endswith('>>'):
-    #         input_prefix = input_prefix[:-1]
-        
-    #     identified_bridge_entity = train_lookup.get(input_prefix, 'unknown')
-        
-    #     # partition by type
-    #     tp = instance['type']
-    #     if tp == 'train_inferred':
-    #         grouped_id_train_data[identified_bridge_entity].append(instance)
-    #     elif tp == 'type_0':
-    #         grouped_id_test_data[identified_bridge_entity].append(instance)
-    #     elif tp in ['type_1','type_2','type_3','type_4','type_5','type_6','type_7']:
-    #         grouped_ood_test_data[identified_bridge_entity].append(instance)
-    #     else:
-    #         # nonsense or something else
-    #         grouped_nonsense_test_data[identified_bridge_entity].append(instance)
     
     return grouped_id_train_data, grouped_id_test_data, grouped_ood_test_data
 
@@ -392,22 +353,22 @@ def get_hidden_states_mlp(model, input_text, layer_pos_pairs, tokenizer, device)
     return hidden_states
 
 def process_data_group(model, data_group, layer_pos_pairs, tokenizer, device, mode):
-    results= defaultdict(list)
-    for target, instances in tqdm(data_group.items(), desc="Processing instances"):
+    results = defaultdict(list)
+    for bridge_entity, instances in tqdm(data_group.items(), desc="Processing instances"):
         for instance in instances:
-            inp_txt= instance['input_text']
-            if mode=="residual":
-                hs= get_hidden_states_residual(model, inp_txt, layer_pos_pairs, tokenizer, device)
+            inp_txt = instance['input_text']
+            if mode == "residual":
+                hs = get_hidden_states_residual(model, inp_txt, layer_pos_pairs, tokenizer, device)
             else:
-                hs= get_hidden_states_mlp(model, inp_txt, layer_pos_pairs, tokenizer, device)
+                hs = get_hidden_states_mlp(model, inp_txt, layer_pos_pairs, tokenizer, device)
             item={
                 "input_text": inp_txt,
                 "target_text": instance['target_text'],
-                "identified_target": target,
-                "type": instance.get('type','test_inferred_iid'),
+                "identified_target": bridge_entity,
+                "type": instance.get('type'),
                 "hidden_states": hs
             }
-            results[target].append(item)
+            results[bridge_entity].append(item)
     return results
 
 def main():
@@ -415,38 +376,38 @@ def main():
     parser.add_argument("--ckpt", required=True, help="model checkpoint path")
     parser.add_argument("--layer_pos_pairs", required=True, help="(layer, position) tuples")
     parser.add_argument("--save_dir", required=True, help="dir to store analysis results")
-    parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--atomic_idx", required=True, type=int, help="bottleneck function among f1, f2, and f3 which will be used to evaluate the collapse of the data")
-    parser.add_argument("--data_dir", required=True)
     parser.add_argument("--mode", required=True, help="whether to save the hidden representation of post_mlp or residual stream")
-    
-    args=parser.parse_args()
+
+    args = parser.parse_args()
     assert args.mode in ["post_mlp", "residual"]
+
     setup_logging(args.debug)
-    
+
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    
-    if args.ckpt.split("/")[-1]=="":
+
+    if args.ckpt.split("/")[-1] == "":
         dataset, step = args.ckpt.split("/")[-3].split("_")[0], args.ckpt.split("/")[-2].split("-")[-1]
     else:
         dataset, step = args.ckpt.split("/")[-2].split("_")[0], args.ckpt.split("/")[-1].split("-")[-1]
     
-    logging.info("Loading model & tokenizer...")
+    logging.info("Loading model and tokenizer...")
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     model = GPT2LMHeadModel.from_pretrained(os.path.join(base_dir, args.ckpt)).to(device)
     model.eval()
     tokenizer = GPT2Tokenizer.from_pretrained(os.path.join(base_dir, args.ckpt))
-    tokenizer.padding_side="left"
-    tokenizer.pad_token= tokenizer.eos_token
-    tokenizer.pad_token_id= tokenizer.eos_token_id
-    model.config.pad_token_id= model.config.eos_token_id
+    tokenizer.padding_side = "left"
+    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.pad_token_id = tokenizer.eos_token_id
+    model.config.pad_token_id = model.config.eos_token_id
     logging.info("Model and tokenizer loaded successfully")
     
-    data_dir= args.data_dir
-    atomic_file_1 = os.path.join(data_dir, f"atomic_facts_1.json")
-    atomic_file_2 = os.path.join(data_dir, f"atomic_facts_2.json")
-    atomic_file_3 = os.path.join(data_dir, f"atomic_facts_3.json")
+    data_dir = os.path.join(base_dir, "data", dataset)
+    atomic_file_1 = os.path.join(data_dir, f"atomic_facts_f1.json")
+    atomic_file_2 = os.path.join(data_dir, f"atomic_facts_f2.json")
+    atomic_file_3 = os.path.join(data_dir, f"atomic_facts_f3.json")
     # (t_N1, t_N2) -> t_N3
     f1_dict, f2_dict, f3_dict = load_atomic_facts_3hop(atomic_file_1, atomic_file_2, atomic_file_3)
     # Here, for 3-hop we might want to load atomic_facts_1,2,3, but we keep minimal changes => same approach as parallel
@@ -457,7 +418,7 @@ def main():
     # but we'll keep the old approach for minimal changes.
     
     grouped_id_train_data, grouped_id_test_data, grouped_ood_test_data = load_and_preprocess_data(
-        f1_dict, f2_dict, f3_dict, os.path.join(data_dir,"test.json"), idx=args.atomic_idx
+        f1_dict, f2_dict, f3_dict, os.path.join(data_dir, "test.json"), idx=args.atomic_idx
     )
     
     layer_pos_pairs = eval(args.layer_pos_pairs)
@@ -467,57 +428,57 @@ def main():
     logging.info(f"ID test targets: {len(grouped_id_test_data)}")
     logging.info(f"OOD test targets: {len(grouped_ood_test_data)}")
     
-    logging.info("Process ID train group...")
-    id_train_results= process_data_group(model, grouped_id_train_data, layer_pos_pairs, tokenizer, device, args.mode)
-    
-    logging.info("Process ID test group...")
-    id_test_results= process_data_group(model, grouped_id_test_data, layer_pos_pairs, tokenizer, device, args.mode)
-    
-    logging.info("Process OOD test group...")
-    ood_test_results= process_data_group(model, grouped_ood_test_data, layer_pos_pairs, tokenizer, device, args.mode)
-    
-    logging.info("Deduplicate ID train...")
-    id_train_dedup, id_train_stats= deduplicate_vectors(id_train_results)
-    
-    logging.info("Deduplicate ID test...")
-    id_test_dedup, id_test_stats= deduplicate_vectors(id_test_results)
-    
-    logging.info("Deduplicate OOD test...")
-    ood_dedup, ood_stats= deduplicate_vectors(ood_test_results)
-    
-    save_dir = os.path.join(args.save_dir, dataset, str(layer_pos_pairs[0]).replace(" ", ""), step)
+    save_dir = os.path.join(args.save_dir, args.mode, dataset, f"f{args.atomic_idx}", str(layer_pos_pairs[0]).replace(" ", ""), step)
     if os.path.exists(save_dir):
         logging.info(f"{save_dir} already exist!!!")
         return
     else:
         os.makedirs(save_dir, exist_ok=True)
+    
+    logging.info("Process ID train group...")
+    id_train_results = process_data_group(model, grouped_id_train_data, layer_pos_pairs, tokenizer, device, args.mode)
+    
+    logging.info("Process ID test group...")
+    id_test_results = process_data_group(model, grouped_id_test_data, layer_pos_pairs, tokenizer, device, args.mode)
+    
+    logging.info("Process OOD test group...")
+    ood_test_results = process_data_group(model, grouped_ood_test_data, layer_pos_pairs, tokenizer, device, args.mode)
+    
+    logging.info("Deduplicate ID train...")
+    id_train_dedup, id_train_stats = deduplicate_vectors(id_train_results)
+    
+    logging.info("Deduplicate ID test...")
+    id_test_dedup, id_test_stats = deduplicate_vectors(id_test_results)
+    
+    logging.info("Deduplicate OOD test...")
+    ood_dedup, ood_stats = deduplicate_vectors(ood_test_results)
 
     # saving
-    id_train_save = os.path.join(save_dir,"id_train_dedup.json")
-    with open(id_train_save,"w") as f:
-        json.dump(id_train_dedup,f)
+    id_train_save = os.path.join(save_dir, "id_train_dedup.json")
+    with open(id_train_save, "w") as f:
+        json.dump(id_train_dedup, f)
     logging.info(f"Saved id_train dedup => {id_train_save}")
 
-    id_test_save = os.path.join(save_dir,"id_test_dedup.json")
-    with open(id_test_save,"w") as f:
-        json.dump(id_test_dedup,f)
+    id_test_save = os.path.join(save_dir, "id_test_dedup.json")
+    with open(id_test_save, "w") as f:
+        json.dump(id_test_dedup, f)
     logging.info(f"Saved id_test dedup => {id_test_save}")
     
-    ood_save= os.path.join(save_dir,"ood_dedup.json")
+    ood_save = os.path.join(save_dir,"ood_dedup.json")
     with open(ood_save,"w") as f:
         json.dump(ood_dedup,f)
     logging.info(f"Saved ood dedup => {ood_save}")
     
     # dedup stats
-    id_train_stats_path= os.path.join(save_dir,"dedup_stats_id_train.json")
+    id_train_stats_path = os.path.join(save_dir,"dedup_stats_id_train.json")
     with open(id_train_stats_path,"w") as f:
         json.dump(id_train_stats,f)
     
-    id_test_stats_path= os.path.join(save_dir,"dedup_stats_id_test.json")
+    id_test_stats_path = os.path.join(save_dir,"dedup_stats_id_test.json")
     with open(id_test_stats_path,"w") as f:
         json.dump(id_test_stats,f)
     
-    ood_stats_path= os.path.join(save_dir,"dedup_stats_ood.json")
+    ood_stats_path = os.path.join(save_dir,"dedup_stats_ood.json")
     with open(ood_stats_path,"w") as f:
         json.dump(ood_stats,f)
     
