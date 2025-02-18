@@ -1114,7 +1114,7 @@ class Seq2SeqModel:
                     
                     # Reshape back to [batch_size, sequence_length]
                     loss_per_instance = loss_per_token.view(batch_size, seq_len)
-                    loss_mask = loss_per_instance != 0
+                    loss_mask = shifted_labels != -100
                     loss_mask = loss_mask.float()
                     
                     loss_per_instance = torch.sum(loss_per_instance * loss_mask, dim=1)

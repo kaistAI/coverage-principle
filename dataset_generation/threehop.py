@@ -173,6 +173,7 @@ def build_3hop_dataset(
         if len(quadruples)==0:
             continue
         random.shuffle(quadruples)
+        # Warning: if cutoff == 0, then len(tr) == 0 and len(cv) == 1 if len(quadruples) == 1
         cutoff = int(round(train_ratio * len(quadruples)))
         tr = quadruples[:cutoff]
         cv = quadruples[cutoff:]
