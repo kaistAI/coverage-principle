@@ -249,7 +249,9 @@ class LanguageModelingArgs(ModelArgs):
     """
     Model args for a LanguageModelingModel
     """
-
+    rmsprop_alpha: float = 0.99
+    rmsprop_momentum: float = 0.0
+    rmsprop_centered: bool = False
     model_class: str = "LanguageModelingModel"
     block_size: int = -1
     config_name: str = None

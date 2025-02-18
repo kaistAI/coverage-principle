@@ -33,7 +33,7 @@ from transformers.optimization import (
     get_cosine_with_hard_restarts_schedule_with_warmup,
     get_polynomial_decay_schedule_with_warmup,
 )
-from torch.optim import AdamW
+from torch.optim import AdamW, RMSprop
 from transformers.optimization import Adafactor
 from transformers import (
     AutoConfig,
@@ -83,6 +83,9 @@ from transformers import (
     GPT2Config,
     GPT2LMHeadModel,
     GPT2Tokenizer,
+    LlamaConfig,
+    LlamaForCausalLM,
+    LlamaTokenizer,
 )
 import datasets
 from datasets import load_from_disk
@@ -126,6 +129,7 @@ MODEL_CLASSES = {
     "rag-sequence": (RagConfig, RagSequenceForGeneration, RagTokenizer, RagRetriever),
     "roberta": (RobertaConfig, RobertaModel, RobertaTokenizerFast),
     "gpt2": (GPT2Config, GPT2LMHeadModel, GPT2Tokenizer),
+    "llama": (LlamaConfig, LlamaForCausalLM, LlamaTokenizer)
 }
 
 class Seq2SeqModule(nn.Module):
@@ -263,11 +267,28 @@ class Seq2SeqModel:
         
         ### load model and tokenizer
         _config_class, _model_class, _tokenizer_class = MODEL_CLASSES[model_type]
-        if no_dropout:
-            self.language_model = _model_class.from_pretrained(model_name, attn_pdrop=0.0, embd_pdrop=0.0, resid_pdrop=0.0, summary_first_dropout=0.0)
+        
+        if model_name == "llama":
+            llama_config = LlamaConfig(
+                hidden_size=768,          # Dimensionality of the embeddings and hidden states
+                intermediate_size=3072,   # Feed-forward dimension (typically 4x hidden_size)
+                num_hidden_layers=8,     # Number of transformer layers
+                num_attention_heads=12,   # Number of attention heads
+                max_position_embeddings=1024,
+                # LLaMA's typical RMSNorm epsilon
+                rms_norm_eps=1e-6,
+                # Optionally set rope_scaling if you want to extend context
+                # rope_scaling={"name": "linear", "factor": 2.0},
+                # Or other fields as needed...
+            )
+            self.language_model = _model_class(llama_config)
+            self.lm_tokenizer = _tokenizer_class.from_pretrained("meta-llama/Llama-2-7b")
         else:
-            self.language_model = _model_class.from_pretrained(model_name)
-        self.lm_tokenizer = _tokenizer_class.from_pretrained(model_name)
+            if no_dropout:
+                self.language_model = _model_class.from_pretrained(model_name, attn_pdrop=0.0, embd_pdrop=0.0, resid_pdrop=0.0, summary_first_dropout=0.0)
+            else:
+                self.language_model = _model_class.from_pretrained(model_name)
+            self.lm_tokenizer = _tokenizer_class.from_pretrained(model_name)
         
         # set pad to be eos
         self.lm_tokenizer.pad_token = self.lm_tokenizer.eos_token
@@ -621,10 +642,24 @@ class Seq2SeqModel:
                 relative_step=args.adafactor_relative_step,
                 warmup_init=args.adafactor_warmup_init,
             )
-
+        elif args.optimizer == "RMSProp":
+            # If you want to reuse the same param groups (with weight_decay, etc.) as AdamW
+            # you can do so below. Then pass any RMSProp-specific arguments as needed.
+            # For example, alpha -> args.rmsprop_alpha, momentum, eps, etc.
+            # If you have them in your LanguageModelingArgs, do:
+            optimizer = RMSprop(
+                optimizer_grouped_parameters,
+                lr=args.learning_rate,                # reusing the same LR as AdamW
+                alpha=args.rmsprop_alpha,            # if you have it in your args
+                eps=args.adam_epsilon,               # reuse the same epsilon or define your own
+                momentum=args.rmsprop_momentum,      # if you have it in your args
+                centered=args.rmsprop_centered,      # optional
+                weight_decay=args.weight_decay,      # reuse AdamW's
+            )
+            
         else:
             raise ValueError(
-                "{} is not a valid optimizer class. Please use one of ('AdamW', 'Adafactor') instead.".format(
+                "{} is not a valid optimizer class. Please use one of ('AdamW', 'Adafactor', 'RMSProp') instead.".format(
                     args.optimizer
                 )
             )
