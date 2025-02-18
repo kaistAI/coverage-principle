@@ -3,7 +3,7 @@
 # CHECKPOINT_DIR="/mnt/nas/jinho/GrokkedTransformer/trained_checkpoints/composition.2000.200.inf-controlled_wd-0.1_layer-8_head-12_seed-42/checkpoint-${STEP}"
 
 atomic_idx=3
-layer=7
+layer=4
 pos=3
 key=${layer}${pos}
 mode=residual
@@ -32,5 +32,8 @@ do
         --id_test_file ${DIR}/${step}/${key}/id_test_dedup.json \
         --ood_file ${DIR}/${step}/${key}/ood_dedup.json \
         --output_dir "/mnt/sda/hoyeon/GrokkedTransformer/collapse_analysis/results/threehop/${mode}/${atomic_idx}/(${layer},${pos})/step${step}" \
-        --save_plots
+        --pca_vis \
+        --reduce_dim 3 \
+        --pca_scope global \
+        --reduce_method tsne
 done

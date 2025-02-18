@@ -9,10 +9,11 @@ import argparse
 from tqdm import tqdm
 import re
 import random
-
-# -------------- NEW IMPORTS FOR GPU ACCELERATION --------------
 import torch
 import torch.nn.functional as F
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+import plotly.express as px
 
 def plot_similarity_distribution(similarities, title, save_path, color='blue', kde=True):
     """Create and save a distribution plot for similarities."""
@@ -211,6 +212,161 @@ def sample_references_and_collect_ranges_multi(grouped_instances, out_json_file,
     print(f"Saved multi-range samples => {out_json_file}")
 
 
+###############################################################################
+# 1) A function to compute the embedding via PCA or t-SNE
+###############################################################################
+def compute_embedding(X, method='pca', dim=2):
+    """
+    X: np.array shape [N, D]
+    method in {'pca','tsne'}
+    dim in {2,3}
+    
+    Returns:
+      X_emb shape [N, dim], a numpy array with the new embedding.
+    """
+    if method == 'pca':
+        reducer = PCA(n_components=dim)
+        X_emb = reducer.fit_transform(X)
+    else:
+        # t-SNE
+        # You can tune perplexity, etc. for your data
+        reducer = TSNE(n_components=dim, perplexity=30, 
+                       n_iter=1000, verbose=1)
+        X_emb = reducer.fit_transform(X)
+    return X_emb
+
+
+###############################################################################
+# 2) The main plotting function: either 2D => Matplotlib PNG,
+#    or 3D => Plotly HTML, for either PCA or t-SNE.
+###############################################################################
+def plot_embedding(
+    grouped_vectors,
+    output_path,
+    m=3,
+    n=5,
+    title="Embedding Visualization",
+    reduce_dim=2,
+    reduce_method="pca",
+    scope="global"
+):
+    """
+    scope in {'global','local'} => see your existing logic
+      if scope='global', gather *all* bridging groups
+      if scope='local', pick bridging groups of size>=n, up to m groups,
+                       from each group, we gather n vectors for uniform size.
+
+    reduce_method in {'pca','tsne'}
+    reduce_dim in {2,3}
+
+    We produce a 2D or 3D scatter:
+      - 2D => static PNG (Matplotlib)
+      - 3D => interactive HTML (Plotly)
+    """
+    bridging_list = []
+    all_points = []
+
+    # 1) gather vectors
+    if scope == "global":
+        # gather all bridging vectors
+        for bridging_key, vlist in grouped_vectors.items():
+            for v in vlist:
+                bridging_list.append(bridging_key)
+                all_points.append(v)
+    else:
+        # local => only bridging groups of size >= n
+        valid_groups = [k for k,v in grouped_vectors.items() if k!='unknown' and len(v)>=n]
+        random.shuffle(valid_groups)
+        valid_groups = valid_groups[:m]
+        for bridging_key in valid_groups:
+            vlist = grouped_vectors[bridging_key]
+            random.shuffle(vlist)
+            subset = vlist[:n]  # pick exactly n
+            for vec in subset:
+                bridging_list.append(bridging_key)
+                all_points.append(vec)
+
+    if not all_points:
+        print(f"No vectors => skip {reduce_method} scope={scope}.")
+        return
+
+    X = np.array(all_points)
+    if X.shape[0] < 2:
+        print("Fewer than 2 vectors => skip embedding.")
+        return
+
+    # 2) compute embedding
+    print(f"Compute {reduce_method.upper()} with dim={reduce_dim} on {X.shape[0]} points...")
+    X_emb = compute_embedding(X, method=reduce_method, dim=reduce_dim)
+
+    # 3) We want to color bridging groups that have at least n items, up to m.
+    #   Even in 'global' mode, we do the same for coloring.
+    group_sizes= defaultdict(int)
+    for b in bridging_list:
+        group_sizes[b]+=1
+    chosen_keys = [k for k in group_sizes if k!='unknown' and group_sizes[k]>=n]
+    random.shuffle(chosen_keys)
+    chosen_keys= chosen_keys[:m]
+
+    # We'll skip bridging keys not in chosen_keys (or color them lightly if you prefer).
+    # For minimal changes => skip them.
+    # 4) 2D => static PNG, 3D => interactive HTML
+    if reduce_dim == 2:
+        fig, ax = plt.subplots(figsize=(8,6))
+        palette = sns.color_palette("hls", len(chosen_keys))
+        key2color = {}
+        for i,k in enumerate(chosen_keys):
+            key2color[k] = palette[i]
+
+        for i,bkey in enumerate(bridging_list):
+            if bkey not in key2color:
+                continue
+            c= key2color[bkey]
+            ax.scatter(X_emb[i,0], X_emb[i,1], color=c, s=20, alpha=0.7)
+
+        handles= []
+        for i,k in enumerate(chosen_keys):
+            c= palette[i]
+            handles.append( plt.Line2D([],[], marker='o', color=c, label=str(k), linestyle='None') )
+        ax.legend(handles=handles, bbox_to_anchor=(1.05,1), loc='upper left')
+        ax.set_title(f"{reduce_method.upper()} {reduce_dim}D: {title}")
+        plt.tight_layout()
+        plt.savefig(output_path)
+        plt.close()
+        print(f"{reduce_method.upper()} 2D => saved {output_path}")
+
+    elif reduce_dim == 3:
+        # produce 3D interactive plot => .html
+        bridging_chosen= []
+        for b in bridging_list:
+            if b in chosen_keys:
+                bridging_chosen.append(b)
+            else:
+                bridging_chosen.append(None)  # skip coloring
+
+        import pandas as pd
+        df_data= {
+          "x": X_emb[:,0],
+          "y": X_emb[:,1],
+          "z": X_emb[:,2],
+          "bridging": bridging_chosen
+        }
+        df= pd.DataFrame(df_data)
+
+        fig = px.scatter_3d(
+            df, x="x", y="y", z="z",
+            color="bridging",
+            title=f"{reduce_method.upper()} {reduce_dim}D: {title}",
+            opacity=0.7
+        )
+        fig.update_layout(width=900, height=700)
+        html_file= str(output_path.with_suffix(".html"))
+        fig.write_html(html_file)
+        print(f"{reduce_method.upper()} 3D => interactive => {html_file}")
+    else:
+        print("reduce_dim must be 2 or 3.")
+        
+
 def main():
     parser = argparse.ArgumentParser(description='Calculate and visualize similarity metrics for ID, OOD, and Nonsense vectors')
     parser.add_argument('--id_train_file', required=True, help='Path to the ID Train vector file')
@@ -221,6 +377,20 @@ def main():
                         help="If set, will generate and save plot images. Otherwise skip.")
     parser.add_argument('--num_random_groups', type=int, default=50,
                         help="Number of random bridging groups to sample for the new utility.")
+    
+    # PCA arguments
+    parser.add_argument('--pca_vis',  action='store_true', default=False)
+    parser.add_argument('--reduce_dim',  type=int, default=2, choices=[2,3],
+                        help="Dimension of PCA => 2 or 3")
+    parser.add_argument('--reduce_method', type=str, default='pca',
+                        choices=['pca','tsne'],
+                        help="Which method => pca or tsne")
+    parser.add_argument('--pca_scope', type=str, default="global", choices=["global","local"],
+                        help="Perform PCA globally or only local sample bridging groups")
+    parser.add_argument('--pca_m', type=int, default=5)
+    parser.add_argument('--pca_n', type=int, default=20)
+
+    
     
     args = parser.parse_args()
     
@@ -347,6 +517,49 @@ def main():
         f.write(f"(IDTrain vs IDTest) same bridging: {avg_id_train_test_sims:.4f}\n")
         f.write(f"(OOD global vs IDTrain means): {avg_id_train_ood_s:.4f}\n")
         f.write(f"(OOD global vs IDTest means): {avg_id_test_ood_s:.4f}\n")
+
+    if args.pca_vis:
+        # create subdir
+        dr_dir= output_dir / "pca"
+        dr_dir.mkdir(exist_ok=True)
+
+        # e.g. "id_train_dim2_pca_global.png" or ".html"
+        # Assume you have your id_train_vectors, etc. from process_vectors
+
+        # ID train
+        out_id_train= dr_dir / f"id_train_dim{args.reduce_dim}_{args.reduce_method}_{args.pca_scope}.png"
+        plot_embedding(
+            grouped_vectors=id_train_vectors,
+            output_path=out_id_train,
+            m=args.pca_m, n=args.pca_n,
+            reduce_dim=args.reduce_dim,
+            reduce_method=args.reduce_method,
+            scope=args.pca_scope,
+            title=f"ID Train (Layer {target_layer})"
+        )
+        # ID test
+        out_id_test= dr_dir / f"id_test_dim{args.reduce_dim}_{args.reduce_method}_{args.pca_scope}.png"
+        plot_embedding(
+            grouped_vectors=id_test_vectors,
+            output_path=out_id_test,
+            m=args.pca_m, n=args.pca_n,
+            reduce_dim=args.reduce_dim,
+            reduce_method=args.reduce_method,
+            scope=args.pca_scope,
+            title=f"ID Test (Layer {target_layer})"
+        )
+        # OOD
+        out_ood= dr_dir / f"ood_dim{args.reduce_dim}_{args.reduce_method}_{args.pca_scope}.png"
+        plot_embedding(
+            grouped_vectors=ood_vectors,
+            output_path=out_ood,
+            m=args.pca_m, n=args.pca_n,
+            reduce_dim=args.reduce_dim,
+            reduce_method=args.reduce_method,
+            scope=args.pca_scope,
+            title=f"OOD (Layer {target_layer})"
+        )
+
 
     # -------------- NEW UTILITY: sample multiple random bridging groups --------------
     multi_range_file= output_dir / f"range_samples_layer{target_layer}.json"

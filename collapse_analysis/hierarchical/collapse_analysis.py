@@ -96,7 +96,7 @@ def group_data_by_b2(examples, f1_dict, f2_dict):
         group_dict[b2].append(ex)
     return dict(group_dict)
 
-def group_data_by_t(examples):
+def group_data_by_t(examples, f1_dict, f2_dict, f3_dict):
     """
     For each example: parse (h1,h2,h3,h4),
     b1= f1_dict.get((h1,h2),'unknown'),
@@ -109,7 +109,17 @@ def group_data_by_t(examples):
         if not inp_tokens:
             continue
         h1,h2,h3,h4 = inp_tokens
-        group_dict[h4].append(ex)
+        b1 = f1_dict.get((h1,h2), "unknown")
+        if b1 == "unknown":
+            b2 = "unknown"
+        else:
+            b2 = f2_dict.get((b1,h3), "unknown")
+            
+        if b2 == "unknown":
+            t ="unknown"
+        else:
+            t = f3_dict.get((b2,h4), "unknown")
+        group_dict[t].append(ex)
     return dict(group_dict)
 
 
@@ -180,7 +190,7 @@ def setup_logging(debug_mode):
     level = logging.DEBUG if debug_mode else logging.INFO
     logging.basicConfig(level=level, format="%(asctime)s - %(levelname)s - %(message)s")
 
-def load_and_preprocess_data(f1_dict, f2_dict, test_path, idx):
+def load_and_preprocess_data(f1_dict, f2_dict, f3_dict, test_path, idx):
     """
     Original approach from parallel version:
     - We parse train_path => 'atomic_facts_N.json' style
@@ -216,9 +226,9 @@ def load_and_preprocess_data(f1_dict, f2_dict, test_path, idx):
         grouped_ood_test_data = group_data_by_b2(ood_test_data, f1_dict, f2_dict)
         
     elif idx==3:
-        grouped_id_train_data = group_data_by_t(id_train_data)
-        grouped_id_test_data = group_data_by_t(id_test_data)
-        grouped_ood_test_data = group_data_by_t(ood_test_data)
+        grouped_id_train_data = group_data_by_t(id_train_data, f1_dict, f2_dict, f3_dict)
+        grouped_id_test_data = group_data_by_t(id_test_data, f1_dict, f2_dict, f3_dict)
+        grouped_ood_test_data = group_data_by_t(ood_test_data, f1_dict, f2_dict, f3_dict)
     else:
         raise NotImplementedError
 
@@ -445,7 +455,7 @@ def main():
     # but we'll keep the old approach for minimal changes.
     
     grouped_id_train_data, grouped_id_test_data, grouped_ood_test_data = load_and_preprocess_data(
-        f1_dict, f2_dict, os.path.join(data_dir,"test.json"), idx=args.atomic_idx
+        f1_dict, f2_dict, f3_dict, os.path.join(data_dir,"test.json"), idx=args.atomic_idx
     )
     
     layer_pos_pairs= eval(args.layer_pos_pairs)
