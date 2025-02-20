@@ -1,363 +1,353 @@
-import json
+import argparse
 import numpy as np
 import random
-import os
 from collections import defaultdict
+import logging
+import itertools
+from typing import List
+import multiprocessing as mp
+from tqdm import tqdm
+import os
+import json
+from functools import partial
 
-def form_item(input_tokens, output_token):
+
+def setup_logging(debug_mode: bool):
+    level = logging.DEBUG if debug_mode else logging.INFO
+    # logging.basicConfig(filename="a.log", level=level, format="%(asctime)s - %(levelname)s - %(message)s")
+    logging.basicConfig(level=level, format="%(levelname)s - %(message)s")
+
+
+def make_arbitrary_function(domain: List[int], codomain: List[int], seen_ratio: float):
     """
-    Create a dict with:
-      input_text = concatenation of input_tokens
-      target_text = input_text + output_token + '</a>'
+    Create an arbitrary mapping from domain to codomain, then split it into 
+    'seen' and 'OOD' subsets according to 'seen_ratio'.
+    """
+    result = {}
+    range_vals = random.choices(codomain, k=len(domain))
+    for operand, res in zip(domain, range_vals):
+        result[operand] = res
+
+    keys = list(result.keys())
+    random.shuffle(keys)
+    cutoff = int(round(seen_ratio * len(keys)))
+    seen_expected_inputs, unseen_inputs = keys[:cutoff], keys[cutoff:]
+
+    S_dict = {inp: result[inp] for inp in seen_expected_inputs}
+    return result, S_dict
+
+
+def form_item(input_tokens: List[str], output_token: str):
+    """
+    Convert a list of 4 input tokens plus 1 output token into a dictionary:
+      {
+        "input_text": "<t_0><t_1><t_2><t_3>",
+        "target_text": "<t_0><t_1><t_2><t_3><t_77></a>"
+      }
     """
     inp = "".join(input_tokens)
     tgt = inp + output_token + "</a>"
     return {"input_text": inp, "target_text": tgt}
 
-def build_3hop_dataset(
-    num_tokens=2000,
-    # We pick how many (h1,h2) we define as train vs test for subcomp1
-    num_pairs_f1_train=4000,
-    num_pairs_f1_test=1000,
-    # how many (b1,h3) we define as train vs test for subcomp2
-    num_pairs_f2_train=4000,
-    num_pairs_f2_test=1000,
-    # how many (b2,h4) for subcomp3
-    num_pairs_f3_train=4000,
-    num_pairs_f3_test=1000,
 
-    # fraction of each subcomp's 4-token combos that go to actual train vs covered
-    train_ratio=0.7,
-
-    # how many extra not-covered combos we keep
-    max_not_covered=5000,
-
-    seed=0,
-    outdir="data/3hop_hier"
-):
+def process_item_S_f1(item, S_f2_index, S_f3_index):
     """
-    Build a 3-hop hierarchical dataset:
-
-      1) b1 = f1(h1,h2)
-      2) b2 = f2(b1,h3)
-      3) t  = f3(b2,h4)
-
-    We'll store:
-      - train.json        -> 4->1 examples
-      - test.json         -> 4->1 examples
-         * "type_0"  => fully covered (subcomp1, subcomp2, subcomp3 all in train domain)
-         * "type_1..type_7" => partial coverage failure
-
-    We also store atomic_facts_1,2,3 for analysis of each sub-func.
-
-    Coverage logic:
-      subcomp1 covered if (h1,h2) in S_f1
-      subcomp2 covered if (b1,h3) in S_f2
-      subcomp3 covered if (b2,h4) in S_f3
+    Used for parallel processing to find all 3-hop tuples 
+    (h1, h2, h3, h4, t) that can be formed using S_f1, S_f2, S_f3.
     """
+    (h1, h2), b1 = item
+    partial_set = set()
+    assert b1 in S_f2_index, f"b1 {b1} not in S_f2_index"
+    for h3, b2 in S_f2_index[b1]:
+        assert b2 in S_f3_index, f"b2 {b2} not in S_f3_index"
+        for h4, t in S_f3_index[b2]:
+            partial_set.add((h1, h2, h3, h4, t))
+    return partial_set
 
-    np.random.seed(seed)
-    random.seed(seed)
 
-    vocab = [f"<t_{i}>" for i in range(num_tokens)]
+def coverage_type(sc1: bool, sc2: bool, sc3: bool):
+    """
+    Determine coverage type based on whether (f1, f2, f3) for the 3-hop 
+    have been 'seen' (True) or not (False).
+    (1,1,1) => coverage=0, otherwise coverage=1..7
+    """
+    bits = (sc1 << 2) + (sc2 << 1) + sc3
+    if bits == 7:  # 111
+        return 0
+    else:
+        return bits + 1  # 0..6 => 1..7
 
-    # -----------------------------
-    # Step A: build partial f1, f2, f3
-    # -----------------------------
 
-    def sample_pairs(num_pairs, domain_size):
-        """
-        Return 'num_pairs' distinct (x,y) from [0..domain_size)^2
-        or from [0..num_tokens)^2 if domain_size==num_tokens
-        """
-        s = set()
-        out = []
-        while len(out) < num_pairs:
-            x = np.random.randint(domain_size)
-            y = np.random.randint(domain_size)
-            if (x,y) not in s:
-                s.add((x,y))
-                out.append((x,y))
-        return out
+def choose(arr, n_or_ratio):
+    """
+    If n_or_ratio is an int, pick that many random samples from arr.
+    If it's a float, interpret it as ratio of the array length.
+    """
+    if isinstance(n_or_ratio, float):
+        n = int(round(len(arr) * n_or_ratio))
+    else:
+        n = n_or_ratio
+    if n >= len(arr):
+        return arr
+    return random.sample(arr, n)
 
-    # For subcomp1: (h1,h2)-> b1
-    #   - We'll just pick them from [0..num_tokens) for demonstration
-    S_f1 = sample_pairs(num_pairs_f1_train, domain_size=num_tokens)
-    T_f1 = sample_pairs(num_pairs_f1_test,  domain_size=num_tokens)
 
-    # For subcomp2: (b1,h3)-> b2
-    #   - The domain "b1" might be up to num_tokens as well. 
-    #     For demonstration, we won't constrain b1. We'll treat them as indices in [0..num_tokens).
-    S_f2 = sample_pairs(num_pairs_f2_train, domain_size=num_tokens)
-    T_f2 = sample_pairs(num_pairs_f2_test,  domain_size=num_tokens)
+def parse_3hop_input(inp_text: str):
+    """
+    Parse an input string like '<t_7><t_11><t_99><t_25>' 
+    and return [7, 11, 99, 25]. Returns None if invalid.
+    """
+    tokens = inp_text.strip("<>").split("><")
+    if len(tokens) != 4:
+        return None
+    return [int(tok.split("_")[-1]) for tok in tokens]
 
-    # For subcomp3: (b2,h4)-> t
-    S_f3 = sample_pairs(num_pairs_f3_train, domain_size=num_tokens)
-    T_f3 = sample_pairs(num_pairs_f3_test,  domain_size=num_tokens)
 
-    # Many->one style or direct random assignment:
-    f1 = {}
-    for (h1,h2) in S_f1:
-        b1 = np.random.randint(num_tokens)
-        f1[(h1,h2)] = b1
-    for (h1,h2) in T_f1:
-        b1 = np.random.randint(num_tokens)
-        f1[(h1,h2)] = b1
+def reservoir_update(reservoir, tup, total_count, capacity):
+    """
+    Perform a single step of Reservoir Sampling for one coverage bucket.
+    - reservoir: current list of items in the reservoir
+    - tup: (input_tokens_list, output_token_string)
+    - total_count: how many items have we seen so far (for this coverage)
+    - capacity: reservoir size limit
+    """
+    if len(reservoir) < capacity:
+        reservoir.append(form_item(tup[0], tup[1]))
+    else:
+        # choose a random index from [0 .. total_count-1]
+        r = random.randint(0, total_count - 1)
+        if r < capacity:
+            reservoir[r] = form_item(tup[0], tup[1])
 
-    f2 = {}
-    for (b1,h3) in S_f2:
-        b2 = np.random.randint(num_tokens)
-        f2[(b1,h3)] = b2
-    for (b1,h3) in T_f2:
-        b2 = np.random.randint(num_tokens)
-        f2[(b1,h3)] = b2
 
-    f3 = {}
-    for (b2,h4) in S_f3:
-        t = np.random.randint(num_tokens)
-        f3[(b2,h4)] = t
-    for (b2,h4) in T_f3:
-        t = np.random.randint(num_tokens)
-        f3[(b2,h4)] = t
 
-    # We'll store which pairs are "train domain" for subcomp1,2,3
-    S_f1_set = set(S_f1)
-    S_f2_set = set(S_f2)
-    S_f3_set = set(S_f3)
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--num_tokens", type=int, required=True,
+                        help="Number of tokens (excluding the final '</a>' token).")
+    parser.add_argument("--same_f123", action="store_true",
+                        help="If true, f2 and f3 are duplicates of f1 (same mapping) instead of being created independently.")
+    parser.add_argument("--default_seen_ratio", type=float, default=0.7,
+                        help="Ratio of the domain considered 'seen' for each function (f1, f2, f3).")
+    parser.add_argument("--max_train_data_num", type=int, default=382000,
+                        help="Maximum number of 3-hop samples in the training set.")
+    parser.add_argument("--test_size_for_type", type=int, default=3000,
+                        help="Number of final test samples for each coverage type.")
+    parser.add_argument("--debug", action="store_true",
+                        help="Enable debug-level logging (more verbose).")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed for reproducibility.")
+    args = parser.parse_args()
 
-    # -----------------------------
-    # Step B: build possible 4-token combos => final t
-    #   We define "train domain" combos if
-    #     (h1,h2) in S_f1
-    #     => b1 = f1[(h1,h2)]
-    #     => subcomp2 => (b1,h3) in S_f2
-    #     => b2 = ...
-    #     => subcomp3 => (b2,h4) in S_f3
-    # Then we define random-split => train vs covered. 
-    # Everything else => not_covered
-    # (Then we unify covered & not_covered => test)
-    # -----------------------------
-    train_4tups_dict = defaultdict(list)  # store combos that are "fully in train domain"
+    setup_logging(args.debug)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
 
-    # We'll store f3out for each such combo
-    final_out_map = {}
+    # ------------------------------------------------------
+    # 1) Vocab, f1, f2, f3 creation
+    # ------------------------------------------------------
+    vocab = [f"<t_{i}>" for i in range(args.num_tokens)] + ["</a>"]
+    domain = list(itertools.product(range(args.num_tokens), range(args.num_tokens)))
+    codomain = list(range(args.num_tokens))
 
-    # 1) gather all "fully train domain" combos
-    #   meaning (h1,h2) in S_f1, then b1= f1[(h1,h2)]
-    #           (b1,h3) in S_f2, then b2= ...
-    #           (b2,h4) in S_f3, then t= ...
-    # We'll systematically pick (h1,h2,h3,h4) from S_f1, [0..], S_f2,... etc
-    # But that might be huge. Let's do random sampling:
+    # Always make f1
+    f1_dict, S_f1 = make_arbitrary_function(domain, codomain, args.default_seen_ratio)
 
-    num_train_quadruples = 1000000
-    for _ in range(num_train_quadruples):
-        h1 = np.random.randint(num_tokens)
-        h2 = np.random.randint(num_tokens)
-        h3 = np.random.randint(num_tokens)
-        h4 = np.random.randint(num_tokens)
-        if (h1,h2) in f1:   # subcomp1 domain?
-            b1 = f1[(h1,h2)]
-            if (b1,h3) in f2:  # subcomp2 domain?
-                b2 = f2[(b1,h3)]
-                if (b2,h4) in f3:  # subcomp3 domain?
-                    t = f3[(b2,h4)]
-                    train_4tups_dict[(b1,b2)].append((h1,h2,h3,h4))
-                    final_out_map[(h1,h2,h3,h4)] = t
+    if args.same_f123:
+        # f2, f3 are the same as f1
+        f2_dict = dict(f1_dict)
+        S_f2 = dict(S_f1)
 
-    # We'll random-split each (b1,b2) subset into train vs covered
+        f3_dict = dict(f1_dict)
+        S_f3 = dict(S_f1)
+    else:
+        # create independent f2, f3
+        f2_dict, S_f2 = make_arbitrary_function(domain, codomain, args.default_seen_ratio)
+        f3_dict, S_f3 = make_arbitrary_function(domain, codomain, args.default_seen_ratio)
+
+    # ------------------------------------------------------
+    # 2) Build 'train_inferred' from S_f1, S_f2, S_f3
+    #    so that we only sample up to max_train_data_num
+    # ------------------------------------------------------
+    # (a) create index structures for S_f2, S_f3
+    S_f2_index = {}
+    for (b1_idx, h3_idx), b2_idx in S_f2.items():
+        S_f2_index.setdefault(b1_idx, []).append((h3_idx, b2_idx))
+
+    S_f3_index = {}
+    for (b2_idx, h4_idx), t_idx in S_f3.items():
+        S_f3_index.setdefault(b2_idx, []).append((h4_idx, t_idx))
+
+    with mp.Pool(processes=round(mp.cpu_count() * 0.9)) as pool:
+        process_S_f1 = partial(process_item_S_f1, S_f2_index=S_f2_index, S_f3_index=S_f3_index)
+        # for each ( (h1,h2), b1 ) in S_f1, gather the 3-hop expansions
+        results2 = list(tqdm(pool.imap(process_S_f1, list(S_f1.items())),
+                             total=len(S_f1),
+                             desc="Processing inferred facts based on S_f1, S_f2, S_f3"))
+    seen_expected_inferred_idx = set().union(*results2)
+    del results2  # memory efficiency
+
+    logging.info(f"len(seen_expected_inferred_facts): {len(seen_expected_inferred_idx)}")
+
+    # (b) Randomly pick up to max_train_data_num from that set
+    if len(seen_expected_inferred_idx) <= args.max_train_data_num:
+        raise Exception(
+            "\n\n\n###############################################################\n"
+            "All covered data is in train_inferred since MAX_TRAIN_DATA_NUM is too large.\n"
+            "Please make the value smaller\n"
+            "###############################################################\n\n\n"
+        )
+    train_inferred_idx_set: List = set(random.sample(list(seen_expected_inferred_idx),
+                                                     args.max_train_data_num))
+    del seen_expected_inferred_idx  # memory efficiency
+
+    # (c) Re-define S_f1, S_f2, S_f3 to reflect only the actually used mappings
+    S_f1, S_f2, S_f3 = dict(), dict(), dict()
+
+    for seen_h1_idx, seen_h2_idx, seen_h3_idx, seen_h4_idx, seen_t_idx in tqdm(train_inferred_idx_set):
+        seen_b1_idx = f1_dict[(seen_h1_idx, seen_h2_idx)]
+        S_f1[(seen_h1_idx, seen_h2_idx)] = seen_b1_idx
+
+        seen_b2_idx = f2_dict[(seen_b1_idx, seen_h3_idx)]
+        S_f2[(seen_b1_idx, seen_h3_idx)] = seen_b2_idx
+        S_f3[(seen_b2_idx, seen_h4_idx)] = seen_t_idx
+
+    OOD_f1 = {key: value for key, value in f1_dict.items() if key not in S_f1}
+    OOD_f2 = {key: value for key, value in f2_dict.items() if key not in S_f2}
+    OOD_f3 = {key: value for key, value in f3_dict.items() if key not in S_f3}
+
+    assert not (set(S_f1.items()) & set(OOD_f1.items()))
+    assert not (set(S_f2.items()) & set(OOD_f2.items()))
+    assert not (set(S_f3.items()) & set(OOD_f3.items()))
+
+    logging.info(f"real_seen_f1_set len: {len(S_f1)}")
+    logging.info(f"real_seen_f2_set len: {len(S_f2)}")
+    logging.info(f"real_seen_f3_set len: {len(S_f3)}")
+
+    logging.info(f"real_not_seen_f1_set len: {len(OOD_f1)}")
+    logging.info(f"real_not_seen_f2_set len: {len(OOD_f2)}")
+    logging.info(f"real_not_seen_f3_set len: {len(OOD_f3)}")
+
+    # (d) Build final train_inferred data
     train_inferred = []
-    covered_inferred = []
-    train_b1b2_set = set()
+    for (h1_idx, h2_idx, h3_idx, h4_idx, t_idx) in train_inferred_idx_set:
+        inp_tokens = [vocab[h1_idx], vocab[h2_idx], vocab[h3_idx], vocab[h4_idx]]
+        out_token = vocab[t_idx]
+        train_inferred.append(form_item(inp_tokens, out_token))
 
-    for (b1,b2), quadruples in train_4tups_dict.items():
-        if len(quadruples)==0:
+    logging.info(f"train_inferred:\n    example: {train_inferred[:10]}\n    len: {len(train_inferred)}")
+
+    # ------------------------------------------------------
+    # 3) Build coverage type samples (test) using partial skip + reservoir
+    # ------------------------------------------------------
+    f2_index = defaultdict(list)
+    for (b1_idx, h3_idx), b2_idx in f2_dict.items():
+        f2_index[b1_idx].append((h3_idx, b2_idx))
+
+    f3_index = defaultdict(list)
+    for (b2_idx, h4_idx), t_idx in f3_dict.items():
+        f3_index[b2_idx].append((h4_idx, t_idx))
+
+    coverage_reservoirs = defaultdict(list)  # ctype => list of items
+    coverage_seen_count = defaultdict(int)   # ctype => how many we've seen
+
+    # Example skip rates
+    skip_p = 0.4
+
+    for (h1_idx, h2_idx), b1_idx in f1_dict.items():
+        # skip stage-1
+        if random.random() > (1 - skip_p):
             continue
-        random.shuffle(quadruples)
-        # Warning: if cutoff == 0, then len(tr) == 0 and len(cv) == 1 if len(quadruples) == 1
-        cutoff = int(round(train_ratio * len(quadruples)))
-        tr = quadruples[:cutoff]
-        cv = quadruples[cutoff:]
-        # if we have at least 1 item in tr => subcomp2 => subcomp3 => effectively "trained"
-        # for final coverage
-        if len(tr)>0:
-            train_b1b2_set.add((b1,b2))
+        sc1 = ((h1_idx, h2_idx) in S_f1)
 
-        # produce actual items
-        for (h1,h2,h3,h4) in tr:
-            t = final_out_map[(h1,h2,h3,h4)]
-            inp_tokens = [vocab[h1], vocab[h2], vocab[h3], vocab[h4]]
-            out_token  = vocab[t]
-            train_inferred.append(form_item(inp_tokens, out_token))
+        for (h3_idx, b2_idx) in f2_index.get(b1_idx, []):
+            # skip stage-2
+            if random.random() > (1 - skip_p):
+                continue
+            sc2 = ((b1_idx, h3_idx) in S_f2)
 
-        for (h1,h2,h3,h4) in cv:
-            t = final_out_map[(h1,h2,h3,h4)]
-            inp_tokens = [vocab[h1], vocab[h2], vocab[h3], vocab[h4]]
-            out_token  = vocab[t]
-            item = form_item(inp_tokens, out_token)
-            item["type"] = "type_0"  # fully covered
-            covered_inferred.append(item)
+            for (h4_idx, t_idx) in f3_index.get(b2_idx, []):
+                # skip stage-3
+                if random.random() > (1 - skip_p):
+                    continue
+                sc3 = ((b2_idx, h4_idx) in S_f3)
+                c_type = coverage_type(sc1, sc2, sc3)
 
-    # now gather everything else => not_covered
-    # "everything else" = all combos from [0..num_tokens)^4 minus used combos
-    # can be large. We'll do random sampling again
-    used_train_covered = set()
-    for item in train_inferred:
-        # we won't parse back from text, simpler to store them earlier
-        pass
-    # we do store them as sets now
-    used_train_quads = set()
-    for (b1,b2), quadruples in train_4tups_dict.items():
-        random.shuffle(quadruples)
-        cutoff = int(round(train_ratio * len(quadruples)))
-        tr = quadruples[:cutoff]
-        cv = quadruples[cutoff:]
-        for q in tr:
-            used_train_quads.add(q)
-        for q in cv:
-            used_train_quads.add(q)
+                coverage_seen_count[f"type_{c_type}"] += 1
+                reservoir_update(
+                    reservoir=coverage_reservoirs[f"type_{c_type}"],
+                    tup=([vocab[h1_idx], vocab[h2_idx], vocab[h3_idx], vocab[h4_idx]], vocab[t_idx]),
+                    total_count=coverage_seen_count[f"type_{c_type}"],
+                    capacity=args.test_size_for_type
+                )
 
-    # create not_covered via random
-    not_covered_candidates = []
-    num_global_samples = 30000
-    for _ in range(num_global_samples):
-        h1 = np.random.randint(num_tokens)
-        h2 = np.random.randint(num_tokens)
-        h3 = np.random.randint(num_tokens)
-        h4 = np.random.randint(num_tokens)
-        if (h1,h2,h3,h4) not in used_train_quads:
-            not_covered_candidates.append((h1,h2,h3,h4))
+    for ctype, item_list in coverage_reservoirs.items():
+        logging.info(f"{ctype}: {len(item_list)}\n    example: {item_list[:5]}")
 
-    random.shuffle(not_covered_candidates)
-    not_covered_candidates = not_covered_candidates[:max_not_covered]
+    # ------------------------------------------------------
+    # 4) Final test data
+    #    - pick some from train_inferred => "train_inferred" type
+    #    - coverage_buckets from reservoir => "type_0..7"
+    # ------------------------------------------------------
+    test_data = []
 
-    test_not_covered = []
+    # (a) from train_inferred
+    train_sample_for_test = choose(train_inferred, args.test_size_for_type)
+    for item in train_sample_for_test:
+        item["type"] = "train_inferred"
+        test_data.append(item)
 
-    # coverage check
-    def covered_subcomp1(h1,h2):
-        return (h1,h2) in S_f1_set
-    def covered_subcomp2(b1,h3):
-        return (b1,h3) in S_f2_set
-    def covered_subcomp3(b2,h4):
-        return (b2,h4) in S_f3_set
+    # (b) coverage=0..7
+    for ctype, item_list in coverage_reservoirs.items():
+        for item in item_list:
+            item["type"] = ctype
+            test_data.append(item)
 
-    def coverage_failure_type_3(sc1, sc2, sc3):
-        """
-        Example:
-          if all are True => type_0 (fully covered). 
-          else we produce type_1..type_7 or skip if you prefer.
-        We'll do a simple code that yields 1..7 for any partial coverage fail.
-        We'll encode the pattern as bits sc1,sc2,sc3 => up to 8 patterns.
-        sc1 in {0,1}, sc2 in {0,1}, sc3 in {0,1}.
-        (1,1,1) => 0 => fully covered => skip from not-covered set
-        else => 1..7
-        """
-        bits = (sc1<<2) + (sc2<<1) + sc3
-        # bits in [0..7], 7 means (1,1,1).
-        if bits==7:
-            return 0
-        else:
-            return bits+1  # map [0..6] => [1..7]
-
-    for (h1,h2,h3,h4) in not_covered_candidates:
-        # define or reuse f1, f2, f3 if possible
-        if (h1,h2) in f1:
-            b1 = f1[(h1,h2)]
-        else:
-            b1 = np.random.randint(num_tokens)
-
-        if (b1,h3) in f2:
-            b2 = f2[(b1,h3)]
-        else:
-            b2 = np.random.randint(num_tokens)
-
-        if (b2,h4) in f3:
-            t = f3[(b2,h4)]
-        else:
-            t = np.random.randint(num_tokens)
-
-        sc1 = covered_subcomp1(h1,h2)
-        sc2 = covered_subcomp2(b1,h3)
-        sc3 = covered_subcomp3(b2,h4)
-        ctype = coverage_failure_type_3(sc1, sc2, sc3)
-        if ctype==0:
-            # means fully covered => skip
-            continue
-        item = form_item([vocab[h1], vocab[h2], vocab[h3], vocab[h4]], vocab[t])
-        item["type"] = f"type_{ctype}"
-        test_not_covered.append(item)
-
-    # unify covered + not_covered => final test set
-    test_data = covered_inferred + test_not_covered
-    random.shuffle(test_data)
-
-    # build atomic facts for analysis
-    atomic_facts_1 = []
-    for (h1,h2), b1 in f1.items():
-        item = form_item([vocab[h1], vocab[h2]], vocab[b1])
-        atomic_facts_1.append(item)
-
-    atomic_facts_2 = []
-    for (b1,h3), b2 in f2.items():
-        item = form_item([vocab[b1], vocab[h3]], vocab[b2])
-        atomic_facts_2.append(item)
-
-    atomic_facts_3 = []
-    for (b2,h4), t in f3.items():
-        item = form_item([vocab[b2], vocab[h4]], vocab[t])
-        atomic_facts_3.append(item)
-
-    # shuffle final sets
     random.shuffle(train_inferred)
     random.shuffle(test_data)
 
-    os.makedirs(outdir, exist_ok=True)
+    # ------------------------------------------------------
+    # 5) Atomic facts
+    # ------------------------------------------------------
+    atomic_facts_f1 = []
+    for (h1_idx, h2_idx), b1_idx in f1_dict.items():
+        atomic_facts_f1.append(form_item([vocab[h1_idx], vocab[h2_idx]], vocab[b1_idx]))
 
-    with open(os.path.join(outdir, "vocab.json"), "w", encoding="utf-8") as f:
+    atomic_facts_f2 = []
+    for (b1_idx, h3_idx), b2_idx in f2_dict.items():
+        atomic_facts_f2.append(form_item([vocab[b1_idx], vocab[h3_idx]], vocab[b2_idx]))
+
+    atomic_facts_f3 = []
+    for (b2_idx, h4_idx), t_idx in f3_dict.items():
+        atomic_facts_f3.append(form_item([vocab[b2_idx], vocab[h4_idx]], vocab[t_idx]))
+
+    # ------------------------------------------------------
+    # 6) Save results
+    # ------------------------------------------------------
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    save_dir = os.path.join(base_dir, "data",
+                            f"threehop.{args.num_tokens}.{'same_f123' if args.same_f123 else 'diff_f123'}.inf")
+    os.makedirs(save_dir, exist_ok=True)
+
+    with open(os.path.join(save_dir, "vocab.json"), "w", encoding="utf-8") as f:
         json.dump(vocab, f, indent=2)
-
-    with open(os.path.join(outdir, "train.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(save_dir, "train.json"), "w", encoding="utf-8") as f:
         json.dump(train_inferred, f, indent=2)
-    with open(os.path.join(outdir, "test.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(save_dir, "test.json"), "w", encoding="utf-8") as f:
         json.dump(test_data, f, indent=2)
+    with open(os.path.join(save_dir, "atomic_facts_f1.json"), "w", encoding="utf-8") as f:
+        json.dump(atomic_facts_f1, f, indent=2)
+    with open(os.path.join(save_dir, "atomic_facts_f2.json"), "w", encoding="utf-8") as f:
+        json.dump(atomic_facts_f2, f, indent=2)
+    with open(os.path.join(save_dir, "atomic_facts_f3.json"), "w", encoding="utf-8") as f:
+        json.dump(atomic_facts_f3, f, indent=2)
 
-    with open(os.path.join(outdir, "atomic_facts_1.json"), "w", encoding="utf-8") as f:
-        json.dump(atomic_facts_1, f, indent=2)
-    with open(os.path.join(outdir, "atomic_facts_2.json"), "w", encoding="utf-8") as f:
-        json.dump(atomic_facts_2, f, indent=2)
-    with open(os.path.join(outdir, "atomic_facts_3.json"), "w", encoding="utf-8") as f:
-        json.dump(atomic_facts_3, f, indent=2)
-
-    # Print stats
-    type_counts = {}
-    for item in test_data:
-        tstr = item["type"]
-        type_counts[tstr] = type_counts.get(tstr, 0) + 1
-    total_test = len(test_data)
-    print(f"\n3-hop dataset in '{outdir}':")
-    print(f"  Train: {len(train_inferred)}  (4->1 examples)")
-    print(f"  Test:  {len(test_data)}   (4->1 examples, type=0..7)\n")
-    print("  Test breakdown by type:")
-    for tkey in sorted(type_counts.keys()):
-        cnt = type_counts[tkey]
-        frac = 100.0*cnt/(1e-9+total_test)
-        print(f"    {tkey}: {cnt} ({frac:.1f}%)")
-    print()
-    print(f"  atomic_facts_1: {len(atomic_facts_1)}")
-    print(f"  atomic_facts_2: {len(atomic_facts_2)}")
-    print(f"  atomic_facts_3: {len(atomic_facts_3)}\n")
+    print("[INFO] Done!")
+    print(f"Train size: {len(train_inferred)}")
+    print(f"Test size: {len(test_data)}")
+    print(f"S_f1: {len(S_f1)}, S_f2: {len(S_f2)}, S_f3: {len(S_f3)}")
+    print(f"OOD_f1: {len(OOD_f1)}, OOD_f2: {len(OOD_f2)}, OOD_f3: {len(OOD_f3)}")
 
 
-if __name__=="__main__":
-    build_3hop_dataset(
-        num_tokens=50,  # smaller
-        num_pairs_f1_train=600,
-        num_pairs_f1_test=200,
-        num_pairs_f2_train=600,
-        num_pairs_f2_test=200,
-        num_pairs_f3_train=600,
-        num_pairs_f3_test=200,
-        train_ratio=0.7,
-        max_not_covered=100000,
-        seed=42,
-        outdir="test"
-    )
+if __name__ == "__main__":
+    main()
