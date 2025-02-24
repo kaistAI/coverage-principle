@@ -8,3 +8,5 @@ LLM/
 tracing/*
 wandb/
 attention_map/
+
+GrokkedTransformer.code-workspace
