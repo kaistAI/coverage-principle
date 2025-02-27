@@ -206,35 +206,35 @@ def build_dataset(num_entities, num_relations, out_degree=20, split_train_inferr
                             test_inferred_id.append(item)
                             stats["ID_min"] += 1
 
-                # Otherwise => partial ID/OOD => 
-                # => we do NOT want them in the final test, so just put them in train with imbalance
-                else:
-                    # Bridge entity => majority => 99.5% train
-                    if b in majority_entities:
-                        if np.random.uniform() > 0.005:
-                            item = form_items([ent, r1, r2], t)
-                            item["type"] = "train_maj"
-                            train_inferred.append(item)
-                            stats["train_maj"] += 1
-                        else:
-                            # In principle, you could put partial in test or skip entirely. 
-                            # We'll just put them in train to keep it simple.
-                            item = form_items([ent, r1, r2], t)
-                            item["type"] = "train_maj"
-                            train_inferred.append(item)
-                            stats["train_maj"] += 1
-                    else:
-                        # minority => ~24.875% train
-                        if np.random.uniform() < 0.24875:
-                            item = form_items([ent, r1, r2], t)
-                            item["type"] = "train_min"
-                            train_inferred.append(item)
-                            stats["train_min"] += 1
-                        else:
-                            item = form_items([ent, r1, r2], t)
-                            item["type"] = "train_min"
-                            train_inferred.append(item)
-                            stats["train_min"] += 1
+                # # Otherwise => partial ID/OOD => 
+                # # => we do NOT want them in the final test, so just put them in train with imbalance
+                # else:
+                #     # Bridge entity => majority => 99.5% train
+                #     if b in majority_entities:
+                #         if np.random.uniform() > 0.005:
+                #             item = form_items([ent, r1, r2], t)
+                #             item["type"] = "train_maj"
+                #             train_inferred.append(item)
+                #             stats["train_maj"] += 1
+                #         else:
+                #             # In principle, you could put partial in test or skip entirely. 
+                #             # We'll just put them in train to keep it simple.
+                #             item = form_items([ent, r1, r2], t)
+                #             item["type"] = "train_maj"
+                #             train_inferred.append(item)
+                #             stats["train_maj"] += 1
+                #     else:
+                #         # minority => ~24.875% train
+                #         if np.random.uniform() < 0.24875:
+                #             item = form_items([ent, r1, r2], t)
+                #             item["type"] = "train_min"
+                #             train_inferred.append(item)
+                #             stats["train_min"] += 1
+                #         else:
+                #             item = form_items([ent, r1, r2], t)
+                #             item["type"] = "train_min"
+                #             train_inferred.append(item)
+                #             stats["train_min"] += 1
 
     # 6. Create nonsense facts
     nonsenses = []
