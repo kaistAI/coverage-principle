@@ -7,6 +7,8 @@ from copy import deepcopy
 import matplotlib.pyplot as plt
 from collections import defaultdict
 
+random.seed(42)
+
 def build_dicts(entities):
     entity2ind = {}
     ind2entity = []
@@ -53,16 +55,23 @@ def split(arr, ratio_or_count):
             test.append(arr[i])
     return [train, test]
 
-def form_items(c, t):
+def form_items(c, t, type=None):
     """
     Builds dict {input_text: "...", target_text: "..."}
     """
     input_text = "".join(c)
     target_text = input_text + "".join([t, "</a>"])
-    return {
-        "input_text": input_text,
-        "target_text": target_text
-    }
+    if type is not None:
+        return {
+            "input_text": input_text,
+            "target_text": target_text,
+            "type": type
+        }
+    else:
+        return {
+            "input_text": input_text,
+            "target_text": target_text
+        }
 
 def build_dataset(num_entities, num_relations, out_degree=20, split_train_inferred=False):
     """
@@ -195,7 +204,7 @@ def build_dataset(num_entities, num_relations, out_degree=20, split_train_inferr
                             stats["ID_maj"] += 1
                     else:
                         # ~24.875% to train
-                        if np.random.uniform() < 0.24875:
+                        if np.random.uniform() < 0.4975:
                             item = form_items([ent, r1, r2], t)
                             item["type"] = "train_min"
                             train_inferred.append(item)
@@ -205,36 +214,6 @@ def build_dataset(num_entities, num_relations, out_degree=20, split_train_inferr
                             item["type"] = "ID_min"
                             test_inferred_id.append(item)
                             stats["ID_min"] += 1
-
-                # # Otherwise => partial ID/OOD => 
-                # # => we do NOT want them in the final test, so just put them in train with imbalance
-                # else:
-                #     # Bridge entity => majority => 99.5% train
-                #     if b in majority_entities:
-                #         if np.random.uniform() > 0.005:
-                #             item = form_items([ent, r1, r2], t)
-                #             item["type"] = "train_maj"
-                #             train_inferred.append(item)
-                #             stats["train_maj"] += 1
-                #         else:
-                #             # In principle, you could put partial in test or skip entirely. 
-                #             # We'll just put them in train to keep it simple.
-                #             item = form_items([ent, r1, r2], t)
-                #             item["type"] = "train_maj"
-                #             train_inferred.append(item)
-                #             stats["train_maj"] += 1
-                #     else:
-                #         # minority => ~24.875% train
-                #         if np.random.uniform() < 0.24875:
-                #             item = form_items([ent, r1, r2], t)
-                #             item["type"] = "train_min"
-                #             train_inferred.append(item)
-                #             stats["train_min"] += 1
-                #         else:
-                #             item = form_items([ent, r1, r2], t)
-                #             item["type"] = "train_min"
-                #             train_inferred.append(item)
-                #             stats["train_min"] += 1
 
     # 6. Create nonsense facts
     nonsenses = []
@@ -251,7 +230,7 @@ def build_dataset(num_entities, num_relations, out_degree=20, split_train_inferr
             nonsenses.append((e1, e2, e3, e4))
 
     nonsenses = set(nonsenses)
-    nonsenses_facts = [form_items([t1, t2, t3], t4) for (t1, t2, t3, t4) in nonsenses]
+    nonsenses_facts = [form_items([t1, t2, t3], t4, type="test_nonsenses") for (t1, t2, t3, t4) in nonsenses]
 
     # Print the stats as a quick sanity check
     print("==== Data Statistics ====")
@@ -319,8 +298,9 @@ nonsense_ds = choose(nonsenses, test_size)
 all_atomics = id_atomic_facts + ood_atomic_facts
 
 # Possibly downsample train_inferred if you like.
-phi = 9.0
-train_inferred_ds = choose(train_inferred, round(phi * len(id_atomic_facts)))
+# phi = 9.0
+# train_inferred_ds = choose(train_inferred, round(phi * len(id_atomic_facts)))
+train_inferred_ds = train_inferred
 
 # Build final "test" set of probes
 probes = []
