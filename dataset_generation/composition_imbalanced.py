@@ -154,8 +154,8 @@ def build_dataset(num_entities, num_relations, out_degree=20, split_train_inferr
     o2_ID_facts = only_used_ID_facts[:1000]
     o1_ID_facts = only_used_ID_facts[1000:]
 
-    id_atomic_facts = [form_items([h, r], t) for (h, r, t) in ID_facts]
-    ood_atomic_facts = [form_items([h, r], t) for (h, r, t) in OOD_facts]
+    id_atomic_facts = [form_items([h, r], t, type="atomic_id") for (h, r, t) in ID_facts]
+    ood_atomic_facts = [form_items([h, r], t, type="atomic_ood") for (h, r, t) in OOD_facts]
     o1_id_atomic_facts = [form_items([h, r], t) for (h, r, t) in o1_ID_facts]
     o2_id_atomic_facts = [form_items([h, r], t) for (h, r, t) in o2_ID_facts]
 
@@ -295,7 +295,7 @@ nonsense_ds = choose(nonsenses, test_size)
 
 # Keep all atomic facts for training if desired,
 # or you could combine them however you wish.
-all_atomics = id_atomic_facts + ood_atomic_facts
+all_atomic_facts = id_atomic_facts + ood_atomic_facts
 
 # Possibly downsample train_inferred if you like.
 # phi = 9.0
@@ -312,6 +312,10 @@ probes.extend(nonsense_ds)
 
 dataset_name = f"composition.{NUM_ENTITY_IN}.{NUM_RELATION}.inf-imbalanced"
 os.makedirs(f"data/{dataset_name}", exist_ok=True)
+
+with open(f"data/{dataset_name}/atomic_facts.json", "w", encoding='utf-8') as f:
+    # Combine atomic + 2-hop train
+    json.dump(all_atomic_facts, f, ensure_ascii=False)
 
 with open(f"data/{dataset_name}/train.json", "w", encoding='utf-8') as f:
     # Combine atomic + 2-hop train
