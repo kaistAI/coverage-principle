@@ -111,6 +111,8 @@ def main():
                         help="Enable debug-level logging (more verbose).")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed for reproducibility.")
+    parser.add_argument("--include_atomic", action="store_true",
+                        help="If true, include atomic facts in the training set.")
     args = parser.parse_args()
 
     # 1) Setup
@@ -321,13 +323,18 @@ def main():
     # 8) Save results
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     save_dir = os.path.join(base_dir, "data",
-                            f"parallel2hop.{args.num_tokens}.{'same-f123' if args.same_f123 else 'diff-f123'}.inf")
+                            f"parallel2hop.{args.num_tokens}.{'same-f123' if args.same_f123 else 'diff-f123'}.{'include-atomic' if args.include_atomic else 'inf'}")
     os.makedirs(save_dir, exist_ok=True)
 
     with open(os.path.join(save_dir, "vocab.json"), "w", encoding="utf-8") as f:
         json.dump(vocab, f, indent=2)
     with open(os.path.join(save_dir, "train.json"), "w", encoding="utf-8") as f:
-        json.dump(train_inferred, f, indent=2)
+        if args.include_atomic:
+            assert args.same_f123 # only support this for now
+            json.dump(train_inferred+atomic_facts_f1, f, indent=2)
+        else:
+            json.dump(train_inferred, f, indent=2)
+            
     with open(os.path.join(save_dir, "test.json"), "w", encoding="utf-8") as f:
         json.dump(test_data, f, indent=2)
     with open(os.path.join(save_dir, "atomic_facts_f1.json"), "w", encoding="utf-8") as f:
