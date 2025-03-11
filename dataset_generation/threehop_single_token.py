@@ -193,7 +193,7 @@ def main():
     if len(seen_expected_inferred_idx) <= args.max_train_data_num:
         raise Exception(
             "\n\n\n###############################################################\n"
-            "All covered data is in train_inferred since MAX_TRAIN_DATA_NUM is too large.\n"
+            "All covered data is in train_inferred since --max_train_data_num is too large.\n"
             "Please make the value smaller\n"
             "###############################################################\n\n\n"
         )
