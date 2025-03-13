@@ -193,7 +193,7 @@ def main():
     if len(seen_expected_inferred_idx) <= args.max_train_data_num:
         raise Exception(
             "\n\n\n###############################################################\n"
-            "All covered data is in train_inferred since MAX_TRAIN_DATA_NUM is too large.\n"
+            "All covered data is in train_inferred since --max_train_data_num is too large.\n"
             "Please make the value smaller\n"
             "###############################################################\n\n\n"
         )
@@ -326,7 +326,7 @@ def main():
     # ------------------------------------------------------
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     save_dir = os.path.join(base_dir, "data",
-                            f"threehop.{args.num_tokens}.{'same-f123' if args.same_f123 else 'diff-f123'}.inf")
+                            f"threehop.{args.num_tokens}.{args.max_train_data_num}.{'same-f123' if args.same_f123 else 'diff-f123'}.inf")
     os.makedirs(save_dir, exist_ok=True)
 
     with open(os.path.join(save_dir, "vocab.json"), "w", encoding="utf-8") as f:
