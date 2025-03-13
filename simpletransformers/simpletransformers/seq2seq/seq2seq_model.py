@@ -743,6 +743,7 @@ class Seq2SeqModel:
 
         global_step = 0
         tr_loss, logging_loss = 0.0, 0.0
+        early_stop_count = 0
         model.zero_grad()
         optimizer.zero_grad()
         train_iterator = trange(
@@ -919,44 +920,60 @@ class Seq2SeqModel:
                         return False
                     
                     if should_save_regular(global_step, args) or should_save_dense(global_step, save_step_dense, save_step_dense_interval) or should_save_fine(global_step, args):
-                            # save/eval via step only when epoch number is less
-                            output_dir_current = os.path.join(
-                                output_dir, "checkpoint-{}".format(global_step)
-                            )
+                        # save/eval via step only when epoch number is less
+                        output_dir_current = os.path.join(
+                            output_dir, "checkpoint-{}".format(global_step)
+                        )
 
-                            self.save_model(
-                                output_dir_current, optimizer, scheduler, model=model
+                        self.save_model(
+                            output_dir_current, optimizer, scheduler, model=model
+                        )
+                        
+                        if args.evaluate_during_training:
+                            results = self.eval_model(
+                                eval_dataloader,
+                                verbose=verbose,
+                                silent=args.evaluate_during_training_silent,
+                                **kwargs,
                             )
+                            if show_running_loss:
+                                if args.wandb_project or self.is_sweeping:
+                                    for key in results:
+                                        wandb.log(
+                                            {
+                                                f"eval_loss/{key}": results[key][0],
+                                                f"eval_accuracy/{key}": results[key][1],
+                                                "global_step": global_step,
+                                            }
+                                        )
+                            training_progress_scores["global_step"].append(global_step)
+                            training_progress_scores["epoch"].append(current_epoch)
+                            training_progress_scores["train_loss"].append(loss.item())
+                            for key in results:
+                                training_progress_scores[f"eval_loss-{key}"].append(results[key][0])
+                                training_progress_scores[f"eval_acc-{key}"].append(results[key][1])
+                            report = pd.DataFrame(training_progress_scores)
+                            report.to_csv(
+                                os.path.join(output_dir, "training_progress_scores.csv"),
+                                index=False,
+                            )
+                            model.train()
+                            # Early Stopping if ID_test accuracy becomes 1
+                            if "type_0" in results and results["type_0"][1] >= 0.99:
+                                early_stop_count += 1
+                            else:
+                                early_stop_count = 0  # reset if not meeting the threshold
                             
-                            if args.evaluate_during_training:
-                                results = self.eval_model(
-                                    eval_dataloader,
-                                    verbose=verbose,
-                                    silent=args.evaluate_during_training_silent,
-                                    **kwargs,
+                            if early_stop_count >= 10:
+                                print(f"Early stopping triggered: evaluation accuracy has been above 0.98 for 10 consecutive evaluations at global step {global_step}.")
+                                final_dir = os.path.join(output_dir, "final_checkpoint")
+                                self.save_model(final_dir, optimizer, scheduler, model=model)
+                                return (
+                                    global_step, 
+                                    tr_loss / global_step
+                                    if not self.args.evaluate_during_training
+                                    else training_progress_scores,
                                 )
-                                if show_running_loss:
-                                    if args.wandb_project or self.is_sweeping:
-                                        for key in results:
-                                            wandb.log(
-                                                {
-                                                    f"eval_loss/{key}": results[key][0],
-                                                    f"eval_accuracy/{key}": results[key][1],
-                                                    "global_step": global_step,
-                                                }
-                                            )
-                                training_progress_scores["global_step"].append(global_step)
-                                training_progress_scores["epoch"].append(current_epoch)
-                                training_progress_scores["train_loss"].append(loss.item())
-                                for key in results:
-                                    training_progress_scores[f"eval_loss-{key}"].append(results[key][0])
-                                    training_progress_scores[f"eval_acc-{key}"].append(results[key][1])
-                                report = pd.DataFrame(training_progress_scores)
-                                report.to_csv(
-                                    os.path.join(output_dir, "training_progress_scores.csv"),
-                                    index=False,
-                                )
-                                model.train()
 
                     # relation mean shift
                     if self.relation_mean_shift:
