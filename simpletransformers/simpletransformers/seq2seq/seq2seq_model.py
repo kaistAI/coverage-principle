@@ -267,8 +267,11 @@ class Seq2SeqModel:
         
         ### load model and tokenizer
         _config_class, _model_class, _tokenizer_class = MODEL_CLASSES[model_type]
-        
-        if model_name == "llama":
+        if model_name and os.path.exists(model_name) and os.path.isfile(os.path.join(model_name, "pytorch_model.bin")):
+            logger.info(f"Loading model from checkpoint: {model_name}")
+            self.language_model = _model_class.from_pretrained(model_name)
+            self.lm_tokenizer = _tokenizer_class.from_pretrained(model_name)
+        elif model_name == "llama":
             llama_config = LlamaConfig(
                 hidden_size=768,          # Dimensionality of the embeddings and hidden states
                 intermediate_size=3072,   # Feed-forward dimension (typically 4x hidden_size)
