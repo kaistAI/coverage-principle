@@ -323,7 +323,7 @@ def main():
     # 8) Save results
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     save_dir = os.path.join(base_dir, "data",
-                            f"parallel2hop.{args.num_tokens}.{'same-f123' if args.same_f123 else 'diff-f123'}.{'include-atomic' if args.include_atomic else 'inf'}")
+                            f"parallel2hop.{args.num_tokens}.{args.max_train_data_num}.{'same-f123' if args.same_f123 else 'diff-f123'}.{'include-atomic' if args.include_atomic else 'inf'}")
     os.makedirs(save_dir, exist_ok=True)
 
     with open(os.path.join(save_dir, "vocab.json"), "w", encoding="utf-8") as f:
