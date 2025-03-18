@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-def read_data_source_target(file_name, return_num=False, return_json=False):
+def read_data_source_target(file_name, return_num=False, return_json=False, is_train=True):
     """
     file_name: a .json file containing a list of items, each has 'input_text', 'target_text', as keys
     """
@@ -17,7 +17,11 @@ def read_data_source_target(file_name, return_num=False, return_json=False):
             return data, len(data)
         return data
 
-    keys = [key for key in data[0].keys() if key != 'type']
+    if is_train:
+        keys = [key for key in data[0].keys() if key != 'type']
+    else:
+        keys = [key for key in data[0].keys()]
+        
     source_target_pair = []
     for item in data:
         source_target_pair.append([item[key] for key in keys])
