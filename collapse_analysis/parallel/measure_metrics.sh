@@ -13,9 +13,9 @@ do
         do
             CUDA_VISIBLE_DEVICES=3 python measure_metrics.py \
                 --id_train_file "${DIR}/(${LAYER},${POS})/${STEP}/id_train_dedup.json" \
-                --id_test_file ${DIR}/(${LAYER},${POS})/${STEP}/id_test_dedup.json \
-                --ood_file ${DIR}/(${LAYER},${POS})/${STEP}/ood_dedup.json \
-                --output_dir "/mnt/sda/hoyeon/GrokkedTransformer/collapse_analysis/results/parallel2hop.70.100000/${ATOMIC_IDX}/(${LAYER},${POS})/step${STEP}" \
+                --id_test_file "${DIR}/(${LAYER},${POS})/${STEP}/id_test_dedup.json" \
+                --ood_file "${DIR}/(${LAYER},${POS})/${STEP}/ood_dedup.json" \
+                --output_dir "/mnt/sda/hoyeon/GrokkedTransformer/collapse_analysis/results/${DATASET}/${ATOMIC_IDX}/(${LAYER},${POS})/step${STEP}" \
                 --save_plots \
                 --pca_vis \
                 --reduce_method "tsne"
