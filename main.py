@@ -102,20 +102,20 @@ def main():
 
     train_sample_size = None
     if args.do_train:
-        train_df, train_sample_size = read_data_source_target(os.path.join(args.data_dir, "train.json"), return_num=True)
+        train_df, train_sample_size = read_data_source_target(os.path.join(args.data_dir, "train.json"), return_num=True, is_train=True)
     else:
         train_df = None
 
     if args.do_eval or args.evaluate_during_training:
-        eval_df = read_data_source_target(os.path.join(args.data_dir, "test.json"))
+        eval_df = read_data_source_target(os.path.join(args.data_dir, "test.json"), is_train=False)
     else:
         eval_df = None
 
     if args.do_predict or args.predict_during_training:
         if args.custom_test:
-            test_df = read_data_source_target(os.path.join(args.data_dir, args.custom_test), return_json=True)
+            test_df = read_data_source_target(os.path.join(args.data_dir, args.custom_test), return_json=True, is_train=False)
         else:
-            test_df = read_data_source_target(os.path.join(args.data_dir, "test.json"), return_json=True)
+            test_df = read_data_source_target(os.path.join(args.data_dir, "test.json"), return_json=True, is_train=False)
     else:
         test_df = None
 
