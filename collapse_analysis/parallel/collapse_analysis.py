@@ -276,7 +276,7 @@ def main():
     logging.info("Model and tokenizer loaded successfully")
     
     data_dir = args.data_dir
-    atomic_dir = os.path.join(data_dir, f"atomic_facts_{args.atomic_idx}.json")
+    atomic_dir = os.path.join(data_dir, f"atomic_facts_f{args.atomic_idx}.json")
     filtered_train_data, grouped_id_train_data, grouped_id_test_data, grouped_ood_test_data, grouped_nonsense_test_data = load_and_preprocess_data(atomic_dir, os.path.join(data_dir, "test.json"), first=args.atomic_idx==1)
     
     layer_pos_pairs = eval(args.layer_pos_pairs)
@@ -314,7 +314,7 @@ def main():
     nonsense_results_dedup, nonsense_dedup_stats = deduplicate_vectors(nonsense_results)
     
     # ToDo : If the code is changed to support multiple layer_pos_pairs, should change save_dir for each layer_pos_pair
-    save_dir = os.path.join(args.save_dir, dataset, step)
+    save_dir = os.path.join(args.save_dir, step)
     os.makedirs(save_dir, exist_ok=True)
     
     # Save deduplicated results
