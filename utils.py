@@ -20,7 +20,7 @@ def read_data_source_target(file_name, return_num=False, return_json=False):
     keys = list(data[0].keys())
     source_target_pair = []
     for item in data:
-        source_target_pair.append([item[key] for key in keys])
+        source_target_pair.append([item[key] for key in keys if key != 'type'])
 
     if return_num:
         return pd.DataFrame(source_target_pair, columns=keys), len(data)
