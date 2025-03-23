@@ -344,18 +344,29 @@ def preprocess_data_bart(data, mode):
             return_tensors="pt",
         )["input_ids"].squeeze()
         assert (target_ids[:len(target_prefix_ids)] == target_prefix_ids).all()
-    
+    #########################################################################
     # Warning : all target_token should be ended with </a>
     suffix_ids = lm_tokenizer("</a>", return_tensors="pt")["input_ids"].squeeze()
     if suffix_ids.shape == torch.Size([]):
         suffix_ids = torch.tensor([suffix_ids])
+    #########################################################################
+
+
 
     lm_labels = target_ids.clone()
+    #########################################################################
+    # lm_labels[lm_labels == lm_tokenizer.pad_token_id] = -100
+    # lm_labels[:len(target_prefix_ids)] = -100  # no loss on prefix tokens
+    #########################################################################
+    
+    
+    #########################################################################
     actual_token_len = (lm_labels != lm_tokenizer.pad_token_id).sum()
     
     # lm_labels[lm_labels == lm_tokenizer.pad_token_id] = -100
     lm_labels[actual_token_len-len(suffix_ids):] = -100
     lm_labels[:len(target_prefix_ids)] = -100  # only loss for target entity
+    #########################################################################
     
     if mode == "dev":
         return {

@@ -55,6 +55,7 @@ def main():
     parser.add_argument("--save_fine_step_list", default=None, nargs="+", help="checkpoint's steps to save for trajectory analysis")
     parser.add_argument("--train_batch_size", default=16, type=int, help="Size of each train batch")
     parser.add_argument("--eval_batch_size", default=16, type=int, help="Size of each eval/predict batch")
+    parser.add_argument("--eval_steps", default=25, type=int, help="block size")
     parser.add_argument("--gradient_accumulation_steps", default=1, type=int, help="gradient accumulation steps")
     parser.add_argument("--learning_rate", default=4e-5, type=float, help="learning rate")
     parser.add_argument("--max_steps", default=0, type=int, help="Number of train steps")
@@ -133,6 +134,7 @@ def main():
         "block_size": args.block_size,
         "train_batch_size": args.train_batch_size,
         "eval_batch_size": args.eval_batch_size,
+        "eval_steps": args.eval_steps,
         "gradient_accumulation_steps": args.gradient_accumulation_steps,
         "learning_rate": args.learning_rate,
         "num_train_epochs": args.num_train_epochs,
