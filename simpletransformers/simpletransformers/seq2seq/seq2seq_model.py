@@ -497,6 +497,9 @@ class Seq2SeqModel:
         Utility function to be used by the train_model() method. Not intended to be used directly.
         """
 
+        fit_train_flag = False
+        fit_train_epoch = -1
+        
         model = self.model
         args = self.args
         lm_tokenizer = self.lm_tokenizer
@@ -966,6 +969,27 @@ class Seq2SeqModel:
                             early_stop_count += 1
                         else:
                             early_stop_count = 0  # reset if not meeting the threshold
+                            
+                        if results["train_inferred"][1] >= 0.99:
+                            if not fit_train_flag:
+                                fit_train_epoch = current_epoch
+                                fit_train_flag=True
+                                train_acc = results["train_inferred"][1]
+                                print(f"epoch {current_epoch} / train acc {train_acc}\nFitting train accuracy above 0.99. Countdown!")
+                        
+                        if fit_train_flag:
+                            print(f"Countdown: {current_epoch - fit_train_epoch} / 100 epochs passed")
+                        
+                        if fit_train_flag and current_epoch - fit_train_epoch > 100:
+                            print(f"Early stopping triggered: the model couldn't reach evaluation acurracy above 0.99 until 100 consecutive epochs after fitting train accuracy above 0.99.")
+                            final_dir = os.path.join(output_dir, "final_checkpoint")
+                            self.save_model(final_dir, optimizer, scheduler, model=model)
+                            return (
+                                global_step, 
+                                tr_loss / global_step
+                                if not self.args.evaluate_during_training
+                                else training_progress_scores,
+                            )
                         
                         if early_stop_count >= 1:
                             print(f"Early stopping triggered: evaluation accuracy has been above 0.99 for 1 consecutive evaluations at global step {global_step}.")
