@@ -43,9 +43,37 @@ def form_item(input_tokens: List[str], output_token: str):
         "input_text": "<t_0><t_1><t_2>",
         "target_text": "<t_0><t_1><t_2><t_9></a>"
       }
+    Used for single-hop atomic facts.
     """
     inp = "".join(input_tokens)
     tgt = inp + output_token + "</a>"
+    return {"input_text": inp, "target_text": tgt}
+
+
+def form_item_2hop_cot(h1_idx, h2_idx, h3_idx, t_idx, vocab, f1_dict, cot=False):
+    """
+    For the final 2-hop samples:
+      - We have input: e0=e_h1_idx, e1=e_h2_idx, e2=e_h3_idx
+      - We have bridging entity b1 = f1(e0,e1) from S_f1
+      - We have final label y = f2(b1,e1,e2)
+
+    If 'cot' is True => the target has two tokens: <b1><y></a>
+    Otherwise => the target has one token: <y></a>
+    """
+    b1_idx = f1_dict[(h1_idx, h2_idx)]
+    bridging_token = vocab[b1_idx]
+    out_token = vocab[t_idx]
+
+    inp_tokens = [vocab[h1_idx], vocab[h2_idx], vocab[h3_idx]]
+    inp = "".join(inp_tokens)
+
+    if cot:
+        # chain-of-thought style: <b1><final_label>
+        tgt = inp + bridging_token + out_token + "</a>"
+    else:
+        # original style: <final_label>
+        tgt = inp + out_token + "</a>"
+
     return {"input_text": inp, "target_text": tgt}
 
 
@@ -61,8 +89,10 @@ def process_item_S_f1(item, S_f2_index):
     """
     (h1, h2), b1 = item
     partial_set = set()
-    assert (b1, h2) in S_f2_index
-    for h3, t in S_f2_index[(b1, h2)]:
+    # b1,e1 => e1 == h2
+    if (b1, h2) not in S_f2_index:
+        return partial_set
+    for (h3, t) in S_f2_index[(b1, h2)]:
         partial_set.add((h1, h2, h3, t))
     return partial_set
 
@@ -76,10 +106,7 @@ def coverage_type(sc1: bool, sc2: bool):
       bit<3 => coverage=bit+1
     """
     bit = (sc1 << 1) + sc2  # 0..3
-    if bit == 3:
-        return 0
-    else:
-        return bit + 1
+    return 0 if bit == 3 else bit + 1
 
 
 def choose(arr, n_or_ratio):
@@ -100,7 +127,7 @@ def reservoir_update(reservoir, tup, total_count, capacity):
     """
     Perform a single step of Reservoir Sampling for one coverage bucket.
     - reservoir: current list of items in the reservoir
-    - tup: (input_tokens_list, output_token_string)
+    - tup: (input_tokens_list, output_token_string)  [the old style]
     - total_count: how many items have we seen so far (for this coverage)
     - capacity: reservoir size limit
     """
@@ -128,6 +155,8 @@ def main():
                         help="Enable debug-level logging (more verbose).")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed for reproducibility.")
+    parser.add_argument("--cot", action="store_true",
+                        help="If true, generate two tokens in the label: <bridge_token><final_token>.")
     args = parser.parse_args()
 
     setup_logging(args.debug)
@@ -138,9 +167,8 @@ def main():
     # 1) Vocab, f1, f2 creation
     # ------------------------------------------------------
     vocab = [f"<t_{i}>" for i in range(args.num_tokens)] + ["</a>"]
-    # For f1: domain is (e0,e1).
+    # f1 domain => (e0,e1).  f2 domain => (b1, e1, e2).
     domain_f1 = list(itertools.product(range(args.num_tokens), range(args.num_tokens)))
-    # For f2: domain is now (b1, e1, e2).
     domain_f2 = list(itertools.product(
         range(args.num_tokens),   # possible b1
         range(args.num_tokens),   # e1
@@ -148,46 +176,36 @@ def main():
     ))
     codomain = list(range(args.num_tokens))
 
-    # f1
     f1_dict, S_f1 = make_arbitrary_function(domain_f1, codomain, args.default_seen_ratio)
 
     if args.same_f12:
         # f2 is the same as f1, but that has fewer inputs than we need.
-        # For minimal code difference, we replicate the same single-output map
-        # across the domain of size 3. Not necessarily "well-defined" but consistent
-        # for demonstration.
+        # For minimal code difference, replicate results across the triple domain.
         f2_dict = {}
         for triple in domain_f2:
-            # e.g., treat the triple's first 2 elements as the key into f1
-            # or anything consistent so "f2" is effectively same as "f1" repeated
-            # Minimal code example, but logically you might define a better approach.
-            key_2d = (triple[0], triple[1])  # b1, e1 => 2D key
+            key_2d = (triple[0], triple[1])  # (b1, e1)
             if key_2d in f1_dict:
                 f2_dict[triple] = f1_dict[key_2d]
             else:
-                # If it wasn't in f1_dict, just assign random result
-                # because "same_f12" is ambiguous for a 3D domain
                 f2_dict[triple] = random.choice(codomain)
-        # Split into seen/unseen for f2
+        # define S_f2 from the partial set
         keys_f2 = list(f2_dict.keys())
         random.shuffle(keys_f2)
         cutoff_f2 = int(round(args.default_seen_ratio * len(keys_f2)))
-        seen_f2_keys = set(keys_f2[:cutoff_f2])
+        seen_f2_keys = keys_f2[:cutoff_f2]
         S_f2 = {k: f2_dict[k] for k in seen_f2_keys}
     else:
-        # create independent f2
         f2_dict, S_f2 = make_arbitrary_function(domain_f2, codomain, args.default_seen_ratio)
 
     # ------------------------------------------------------
     # 2) Build 'train_inferred' from S_f1, S_f2
-    #    so that we only sample up to max_train_data_num
     # ------------------------------------------------------
-    # (a) create index for S_f2: keyed by (b1_idx, e1_idx) => [ (e2_idx, t_idx), ... ]
+    # (a) Index for S_f2: keyed by (b1_idx, e1_idx) => [(e2_idx, t_idx), ...]
     S_f2_index = {}
     for (b1_idx, e1_idx, e2_idx), t_idx in S_f2.items():
         S_f2_index.setdefault((b1_idx, e1_idx), []).append((e2_idx, t_idx))
 
-    # (b) gather expansions of the form (h1,h2)->b1, then (b1,h2,h3)->t => 2-hop
+    # (b) gather expansions => (h1,h2)->b1 => (b1,h2,h3)->t => (h1,h2,h3,t)
     with mp.Pool(processes=round(mp.cpu_count() * 0.9)) as pool:
         process_S_f1_partial = partial(process_item_S_f1, S_f2_index=S_f2_index)
         results2 = list(tqdm(pool.imap(process_S_f1_partial, list(S_f1.items())),
@@ -198,7 +216,7 @@ def main():
 
     logging.info(f"len(seen_expected_inferred_facts): {len(seen_expected_inferred_idx)}")
 
-    # (c) Randomly pick up to max_train_data_num from that set
+    # (c) Randomly pick up to max_train_data_num
     if len(seen_expected_inferred_idx) <= args.max_train_data_num:
         raise Exception(
             "\n\n\n###############################################################\n"
@@ -210,8 +228,7 @@ def main():
                                                      args.max_train_data_num))
     del seen_expected_inferred_idx
 
-    # (d) Re-define S_f1, S_f2 to reflect only the actually used mappings
-    #     so that there's no function input in train that is not used.
+    # (d) Re-define S_f1, S_f2 to reflect only used mappings
     S_f1, S_f2 = dict(), dict()
     for (h1_idx, h2_idx, h3_idx, t_idx) in tqdm(train_inferred_idx_set):
         b1_idx = f1_dict[(h1_idx, h2_idx)]
@@ -229,46 +246,53 @@ def main():
     logging.info(f"real_not_seen_f1_set len: {len(OOD_f1)}")
     logging.info(f"real_not_seen_f2_set len: {len(OOD_f2)}")
 
-    # (e) Build final train_inferred data
+    # (e) Final train_inferred data
     train_inferred = []
     for (h1_idx, h2_idx, h3_idx, t_idx) in train_inferred_idx_set:
-        inp_tokens = [vocab[h1_idx], vocab[h2_idx], vocab[h3_idx]]
-        out_token = vocab[t_idx]
-        train_inferred.append(form_item(inp_tokens, out_token))
+        sample_dict = form_item_2hop_cot(
+            h1_idx=h1_idx,
+            h2_idx=h2_idx,
+            h3_idx=h3_idx,
+            t_idx=t_idx,
+            vocab=vocab,
+            f1_dict=f1_dict,
+            cot=args.cot
+        )
+        train_inferred.append(sample_dict)
 
     logging.info(f"train_inferred:\n    example: {train_inferred[:10]}\n    len: {len(train_inferred)}")
 
     # ------------------------------------------------------
-    # 3) Build coverage type samples (test) using partial skip + reservoir
+    # 3) Build coverage type samples (test) using skip+reservoir
     # ------------------------------------------------------
-    # We'll build an index for the full f2_dict keyed by (b1_idx, e1_idx)
+    # We build an index for the full f2_dict as well
     f2_index = defaultdict(list)
     for (b1_idx, e1_idx, e2_idx), t_idx in f2_dict.items():
         f2_index[(b1_idx, e1_idx)].append((e2_idx, t_idx))
 
-    coverage_reservoirs = defaultdict(list)  # ctype => list of items
-    coverage_seen_count = defaultdict(int)   # ctype => how many we've seen
+    coverage_reservoirs = defaultdict(list)
+    coverage_seen_count = defaultdict(int)
 
     skip_p = 0.4
 
     for (h1_idx, h2_idx), b1_idx in f1_dict.items():
-        # skip stage-1
         if random.random() > (1 - skip_p):
             continue
         sc1 = ((h1_idx, h2_idx) in S_f1)
 
-        # possible second stage calls are (b1_idx, h2_idx, e2_idx)
         if (b1_idx, h2_idx) not in f2_index:
             continue
         for (h3_idx, t_idx) in f2_index[(b1_idx, h2_idx)]:
-            # skip stage-2
             if random.random() > (1 - skip_p):
                 continue
             sc2 = ((b1_idx, h2_idx, h3_idx) in S_f2)
-
             c_type = coverage_type(sc1, sc2)
             coverage_seen_count[f"type_{c_type}"] += 1
 
+            # Here for coverage test samples, we do "classic" form_item for reservoir
+            # but we need bridging if cot is set. We'll store input tokens + bridging
+            # in the reservoir as well => let's do a local approach:
+            # We'll store the final as a single token, then re-convert it below
             reservoir_update(
                 reservoir=coverage_reservoirs[f"type_{c_type}"],
                 tup=([vocab[h1_idx], vocab[h2_idx], vocab[h3_idx]], vocab[t_idx]),
@@ -279,37 +303,65 @@ def main():
     for ctype, item_list in coverage_reservoirs.items():
         logging.info(f"{ctype}: {len(item_list)}\n    example: {item_list[:5]}")
 
-    # ------------------------------------------------------
-    # 4) Final test data
-    #    - pick some from train_inferred => "train_inferred" type
-    #    - coverage_buckets => "type_0..3"
-    # ------------------------------------------------------
+    # (a) coverage=0..3, plus we also want some "train_inferred" => test_data
     test_data = []
 
-    # (a) from train_inferred
+    # (1) from train_inferred => "train_inferred"
     train_sample_for_test = choose(train_inferred, args.test_size_for_type)
     for item in train_sample_for_test:
         item["type"] = "train_inferred"
         test_data.append(item)
 
-    # (b) coverage=0..3
+    # (2) coverage=0..3 => re-convert them to have bridging if cot
+    #    because reservoir_update used the old form_item style
+    final_coverage_items = []
     for ctype, item_list in coverage_reservoirs.items():
-        for item in item_list:
-            item["type"] = ctype
-            test_data.append(item)
+        for it in item_list:
+            # it["input_text"]: e.g. "<t_5><t_99><t_10>"
+            # we parse them => h1,h2,h3 => find bridging => form final with or w/o CoT
+            raw_inp_str = it["input_text"]  # e.g. "<t_5><t_99><t_10>"
+            # parse it
+            tokens_in = raw_inp_str.strip("<>").split("><")
+            if len(tokens_in) != 3:
+                continue
+            # find bridging
+            # h1_idx => int(tokens_in[0].split("_")[-1])
+            # h2_idx => ...
+            h1_idx = int(tokens_in[0].split("_")[-1])
+            h2_idx = int(tokens_in[1].split("_")[-1])
+            h3_idx = int(tokens_in[2].split("_")[-1])
+            # final label
+            raw_out_str = it["target_text"]  # e.g. "<t_5><t_99><t_10><t_34></a>"
+            # parse final token from the output
+            out_tok = raw_out_str.replace("</a>", "").strip("<>").split("><")[-1]
+            t_idx = int(out_tok.split("_")[-1])
+
+            # build the new item with bridging if needed
+            new_item = form_item_2hop_cot(
+                h1_idx=h1_idx,
+                h2_idx=h2_idx,
+                h3_idx=h3_idx,
+                t_idx=t_idx,
+                vocab=vocab,
+                f1_dict=f1_dict,
+                cot=args.cot
+            )
+            new_item["type"] = ctype
+            final_coverage_items.append(new_item)
+
+    # combine coverage items
+    test_data.extend(final_coverage_items)
 
     random.shuffle(train_inferred)
     random.shuffle(test_data)
 
     # ------------------------------------------------------
-    # 5) Atomic facts
+    # 5) Atomic facts remain single-output
     # ------------------------------------------------------
-    # f1: (h1, h2) -> b1
     atomic_facts_f1 = []
     for (h1_idx, h2_idx), b1_idx in f1_dict.items():
         atomic_facts_f1.append(form_item([vocab[h1_idx], vocab[h2_idx]], vocab[b1_idx]))
 
-    # f2: (b1, e1, e2) -> t
     atomic_facts_f2 = []
     for (b1_idx, e1_idx, e2_idx), t_idx in f2_dict.items():
         atomic_facts_f2.append(form_item([vocab[b1_idx], vocab[e1_idx], vocab[e2_idx]], vocab[t_idx]))
@@ -318,10 +370,12 @@ def main():
     # 6) Save results
     # ------------------------------------------------------
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # label it with "cot" or "nocot" for clarity if you want
+    mode_str = "cot" if args.cot else "inf"
     save_dir = os.path.join(
         base_dir,
         "data",
-        f"nontree.{args.num_tokens}.{args.max_train_data_num}.{'same-f12' if args.same_f12 else 'diff-f12'}.inf"
+        f"nontree.{args.num_tokens}.{args.max_train_data_num}.{'same-f12' if args.same_f12 else 'diff-f12'}.{mode_str}"
     )
     os.makedirs(save_dir, exist_ok=True)
 
