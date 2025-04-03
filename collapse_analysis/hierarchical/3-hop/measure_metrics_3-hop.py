@@ -44,7 +44,6 @@ def load_data(file_path):
     print(f"Successfully loaded. Number of top-level keys in JSON: {len(data)}")
     return data
 
-# Original CPU-based cosine_similarity using scipy:
 def cosine_similarity(v1, v2):
     """
     Matches: 1 - distance.cosine(...)
@@ -86,61 +85,114 @@ def calculate_within_group_similarity_gpu(group):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     X = torch.tensor(group, dtype=torch.float32, device=device)
     X = F.normalize(X, p=2, dim=1)
-    sim_matrix= torch.matmul(X, X.t())
-    idx= torch.triu_indices(k,k,offset=1)
-    sims_upper= sim_matrix[idx[0], idx[1]]
-    sims_list= sims_upper.cpu().numpy().tolist()
+    sim_matrix = torch.matmul(X, X.t())
+    idx = torch.triu_indices(k, k, offset=1)
+    sims_upper = sim_matrix[idx[0], idx[1]]
+    sims_list = sims_upper.cpu().numpy().tolist()
     return float(np.mean(sims_list)), sims_list
 
 def calculate_between_group_similarity_gpu(group_means):
-    M= len(group_means)
-    if M<2:
+    """
+    Existing utility: compute the average pairwise similarity among group centroids.
+    """
+    M = len(group_means)
+    if M < 2:
         return None, []
-    device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    X= torch.tensor(group_means,dtype=torch.float32,device=device)
-    X= F.normalize(X,p=2,dim=1)
-    sim_matrix= torch.matmul(X,X.t())
-    idx= torch.triu_indices(M,M,offset=1)
-    sims_upper= sim_matrix[idx[0], idx[1]]
-    sims_list= sims_upper.cpu().numpy().tolist()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    X = torch.tensor(group_means, dtype=torch.float32, device=device)
+    X = F.normalize(X, p=2, dim=1)
+    sim_matrix = torch.matmul(X, X.t())
+    idx = torch.triu_indices(M, M, offset=1)
+    sims_upper = sim_matrix[idx[0], idx[1]]
+    sims_list = sims_upper.cpu().numpy().tolist()
     return float(np.mean(sims_list)), sims_list
 
 def compute_all_similarities_gpu(all_vectors):
-    if len(all_vectors)<2:
+    """
+    Existing utility: the average pairwise similarity among *all* vectors (triangular).
+    """
+    if len(all_vectors) < 2:
         return []
-    device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    X= torch.tensor(all_vectors,dtype=torch.float32,device=device)
-    X= F.normalize(X,p=2,dim=1)
-    sim_matrix= torch.matmul(X, X.t())
-    N= sim_matrix.size(0)
-    idx= torch.triu_indices(N,N,offset=1)
-    sims_upper= sim_matrix[idx[0],idx[1]]
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    X = torch.tensor(all_vectors, dtype=torch.float32, device=device)
+    X = F.normalize(X, p=2, dim=1)
+    sim_matrix = torch.matmul(X, X.t())
+    N = sim_matrix.size(0)
+    idx = torch.triu_indices(N, N, offset=1)
+    sims_upper = sim_matrix[idx[0], idx[1]]
     return sims_upper.cpu().numpy().tolist()
 
+# ------------------------------------------------------------------------
+# NEW UTILITY #1: compute “between‐group similarity” at the *all vectors* level
+# ------------------------------------------------------------------------
+def calculate_between_group_similarity_allvectors_gpu(grouped_vectors):
+    """
+    For each pair of distinct groups (G_i, G_j), compute the average pairwise
+    similarity across all vectors in G_i x G_j. Return the overall mean (across
+    all pairs) plus the full list of cross-group similarities.
+
+    NOTE: In large data scenarios, this can be expensive, because for each pair
+    of groups, we build and multiply potentially large matrices. Consider sampling
+    if needed for performance.
+    """
+    group_keys = list(grouped_vectors.keys())
+    pair_sims = []
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    for i in range(len(group_keys)):
+        for j in range(i + 1, len(group_keys)):
+            gi = grouped_vectors[group_keys[i]]
+            gj = grouped_vectors[group_keys[j]]
+            if len(gi) == 0 or len(gj) == 0:
+                continue
+            # Move to GPU and normalize
+            Xi = torch.tensor(gi, dtype=torch.float32, device=device)
+            Xj = torch.tensor(gj, dtype=torch.float32, device=device)
+            Xi = F.normalize(Xi, p=2, dim=1)
+            Xj = F.normalize(Xj, p=2, dim=1)
+            # Cross-group similarity matrix => shape [len(gi), len(gj)]
+            sim_matrix = torch.matmul(Xi, Xj.t())
+            pair_sims.extend(sim_matrix.flatten().cpu().numpy().tolist())
+    
+    if pair_sims:
+        return float(np.mean(pair_sims)), pair_sims
+    else:
+        return None, []
+
 def calculate_metrics(grouped_vectors, all_vectors, ood=False):
-    within_all=[]
-    between_all=[]
-    group_means=[]
+    within_all = []
+    between_all = []
+    group_means = []
+    
     for bridging, group in tqdm(grouped_vectors.items()):
-        if bridging=='unknown':
+        if bridging == 'unknown':
             print('skip unknown bridging')
             continue
-        if len(group)>1:
-            _, sims= calculate_within_group_similarity_gpu(group)
+        if len(group) > 1:
+            _, sims = calculate_within_group_similarity_gpu(group)
             within_all.extend(sims)
         group_means.append(np.mean(group, axis=0))
-    _, between_sims= calculate_between_group_similarity_gpu(group_means)
+    
+    # "Between-group" similarity based on centroids (existing approach)
+    _, between_sims = calculate_between_group_similarity_gpu(group_means)
     between_all.extend(between_sims)
-    all_sims= compute_all_similarities_gpu(all_vectors)
+    
+    # NEW: "Between-group" similarity based on *all vectors*
+    between_allvec_mean, between_allvec_sims = calculate_between_group_similarity_allvectors_gpu(grouped_vectors)
+    
+    # All-vectors similarity across the entire dataset
+    all_sims = compute_all_similarities_gpu(all_vectors)
+    
     return (np.mean(within_all) if within_all else 0,
             within_all,
             np.mean(between_all) if between_all else 0,
             between_all,
+            between_allvec_mean if between_allvec_mean is not None else 0,
+            between_allvec_sims,
             group_means,
             all_sims)
 
-
-# -------------- NEW UTILITY #1 FOR MULTIPLE RANDOM GROUPS --------------
+# -------------- EXISTING UTILITY FOR MULTIPLE RANDOM GROUPS --------------
 def sample_references_and_collect_ranges_multi(grouped_instances, out_json_file, n_groups=3):
     """
     1) Randomly pick n_groups bridging groups from 'grouped_instances'.
@@ -153,64 +205,62 @@ def sample_references_and_collect_ranges_multi(grouped_instances, out_json_file,
 
     NOTE: If fewer bridging groups exist or bridging has <2 items, skip it.
     """
-
-    bridging_keys= [k for k,v in grouped_instances.items() if k!='unknown' and len(v)>1]
+    bridging_keys = [k for k,v in grouped_instances.items() if k!='unknown' and len(v)>1]
     random.shuffle(bridging_keys)
-    bridging_keys= bridging_keys[:n_groups]  # pick up to n_groups if possible
+    bridging_keys = bridging_keys[:n_groups]  # pick up to n_groups if possible
 
-    device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    results=[]
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    results = []
     
     for bridging in bridging_keys:
-        inst_list= grouped_instances[bridging]  # list of (vec, in_txt)
-        if len(inst_list)<2:
+        inst_list = grouped_instances[bridging]  # list of (vec, in_txt)
+        if len(inst_list) < 2:
             continue
-        ref_idx= random.randrange(len(inst_list))
-        ref_vec, ref_txt= inst_list[ref_idx]
+        ref_idx = random.randrange(len(inst_list))
+        ref_vec, ref_txt = inst_list[ref_idx]
 
         # normalize the reference
-        ref_t= torch.tensor(ref_vec,dtype=torch.float32,device=device)
-        ref_t= F.normalize(ref_t.unsqueeze(0),p=2,dim=1)[0]
+        ref_t = torch.tensor(ref_vec, dtype=torch.float32, device=device)
+        ref_t = F.normalize(ref_t.unsqueeze(0), p=2, dim=1)[0]
 
         # gather cos sims
-        all_cos=[]
+        all_cos = []
         for i,(v,inp_txt) in enumerate(inst_list):
-            if i==ref_idx:
+            if i == ref_idx:
                 continue
-            v_t= torch.tensor(v,dtype=torch.float32,device=device)
-            v_t= F.normalize(v_t.unsqueeze(0),p=2,dim=1)[0]
-            cos_sim= float(torch.dot(ref_t,v_t).item())
-            all_cos.append((cos_sim,inp_txt))
+            v_t = torch.tensor(v, dtype=torch.float32, device=device)
+            v_t = F.normalize(v_t.unsqueeze(0), p=2, dim=1)[0]
+            cos_sim = float(torch.dot(ref_t, v_t).item())
+            all_cos.append((cos_sim, inp_txt))
 
-        # define 3 ranges
-        ranges= [
+        # define 2 ranges (customize as you wish)
+        ranges = [
           (-0.05, 0.05),
           (0.90, 1.00)
         ]
-        bridging_data={
+        bridging_data = {
           "bridging_key": bridging,
           "reference_instance": ref_txt,
-          "samples":[]
+          "samples": []
         }
-        for (rmin,rmax) in ranges:
-            matched= [(c,txt) for (c,txt) in all_cos if c>=rmin and c<=rmax]
-            matched.sort(key=lambda x:x[0])
-            matched= matched[:30]
+        for (rmin, rmax) in ranges:
+            matched = [(c,txt) for (c,txt) in all_cos if rmin <= c <= rmax]
+            matched.sort(key=lambda x: x[0])
+            matched = matched[:30]
             bridging_data["samples"].append({
               "range": f"[{rmin:.2f},{rmax:.2f}]",
               "count": len(matched),
-              "items":[ {"cos": c, "input_text": txt} for (c,txt) in matched ]
+              "items": [{"cos": c, "input_text": txt} for (c,txt) in matched]
             })
         results.append(bridging_data)
 
-    out_data={
-      "meta": f"Collected from {n_groups} random bridging groups in ID train_inferred",
+    out_data = {
+      "meta": f"Collected from {n_groups} random bridging groups",
       "bridgings": results
     }
-    with open(out_json_file,"w") as f:
-        json.dump(out_data,f,indent=2)
+    with open(out_json_file, "w") as f:
+        json.dump(out_data, f, indent=2)
     print(f"Saved multi-range samples => {out_json_file}")
-
 
 ###############################################################################
 # 1) A function to compute the embedding via PCA or t-SNE
@@ -229,12 +279,10 @@ def compute_embedding(X, method='pca', dim=2):
         X_emb = reducer.fit_transform(X)
     else:
         # t-SNE
-        # You can tune perplexity, etc. for your data
         reducer = TSNE(n_components=dim, perplexity=30, 
                        n_iter=1000, verbose=1)
         X_emb = reducer.fit_transform(X)
     return X_emb
-
 
 ###############################################################################
 # 2) The main plotting function: either 2D => Matplotlib PNG,
@@ -303,10 +351,10 @@ def plot_embedding(
     #   Even in 'global' mode, we do the same for coloring.
     group_sizes= defaultdict(int)
     for b in bridging_list:
-        group_sizes[b]+=1
+        group_sizes[b] += 1
     chosen_keys = [k for k in group_sizes if k!='unknown' and group_sizes[k]>=n]
     random.shuffle(chosen_keys)
-    chosen_keys= chosen_keys[:m]
+    chosen_keys = chosen_keys[:m]
 
     # We'll skip bridging keys not in chosen_keys (or color them lightly if you prefer).
     # For minimal changes => skip them.
@@ -321,10 +369,10 @@ def plot_embedding(
         for i,bkey in enumerate(bridging_list):
             if bkey not in key2color:
                 continue
-            c= key2color[bkey]
+            c = key2color[bkey]
             ax.scatter(X_emb[i,0], X_emb[i,1], color=c, s=20, alpha=0.7)
 
-        handles= []
+        handles = []
         for i,k in enumerate(chosen_keys):
             c= palette[i]
             handles.append( plt.Line2D([],[], marker='o', color=c, label=str(k), linestyle='None') )
@@ -336,22 +384,21 @@ def plot_embedding(
         print(f"{reduce_method.upper()} 2D => saved {output_path}")
 
     elif reduce_dim == 3:
-        # produce 3D interactive plot => .html
-        bridging_chosen= []
+        import pandas as pd
+        bridging_chosen = []
         for b in bridging_list:
             if b in chosen_keys:
                 bridging_chosen.append(b)
             else:
                 bridging_chosen.append(None)  # skip coloring
 
-        import pandas as pd
-        df_data= {
+        df_data = {
           "x": X_emb[:,0],
           "y": X_emb[:,1],
           "z": X_emb[:,2],
           "bridging": bridging_chosen
         }
-        df= pd.DataFrame(df_data)
+        df = pd.DataFrame(df_data)
 
         fig = px.scatter_3d(
             df, x="x", y="y", z="z",
@@ -365,7 +412,6 @@ def plot_embedding(
         print(f"{reduce_method.upper()} 3D => interactive => {html_file}")
     else:
         print("reduce_dim must be 2 or 3.")
-        
 
 def main():
     parser = argparse.ArgumentParser(description='Calculate and visualize similarity metrics for ID, OOD, and Nonsense vectors')
@@ -378,15 +424,15 @@ def main():
     parser.add_argument('--num_random_groups', type=int, default=50,
                         help="Number of random bridging groups to sample for the new utility.")
     
-    # PCA arguments
+    # PCA/TSNE arguments
     parser.add_argument('--pca_vis',  action='store_true', default=False)
     parser.add_argument('--reduce_dim',  type=int, default=2, choices=[2,3],
-                        help="Dimension of PCA => 2 or 3")
+                        help="Dimension of PCA/t-SNE => 2 or 3")
     parser.add_argument('--reduce_method', type=str, default='pca',
                         choices=['pca','tsne'],
                         help="Which method => pca or tsne")
     parser.add_argument('--pca_scope', type=str, default="global", choices=["global","local"],
-                        help="Perform PCA globally or only local sample bridging groups")
+                        help="Perform PCA/t-SNE globally or only local sample bridging groups")
     parser.add_argument('--pca_m', type=int, default=5)
     parser.add_argument('--pca_n', type=int, default=20)
     
@@ -418,30 +464,39 @@ def main():
     print("\nComputing ID Train metrics...")
     (id_train_within_sim, id_train_within_sims,
      id_train_between_sim, id_train_between_sims,
-     id_train_group_means, id_train_all_sims) = calculate_metrics(id_train_vectors, id_train_all_vectors, ood=False)
+     id_train_between_allvec_sim, id_train_between_allvec_sims,
+     id_train_group_means,
+     id_train_all_sims) = calculate_metrics(id_train_vectors, id_train_all_vectors, ood=False)
     
-    print(f"  ID within-group sim (mean): {id_train_within_sim:.4f}")
-    print(f"  ID between-group sim (mean): {id_train_between_sim:.4f}")
-    
+    print(f"  ID within-group sim (mean):          {id_train_within_sim:.4f}")
+    print(f"  ID between-group (centroids) sim:    {id_train_between_sim:.4f}")
+    print(f"  ID between-group (all vectors) sim:  {id_train_between_allvec_sim:.4f}")
+
     # =============== ID Test Metrics ===============
     print("\nComputing ID Test metrics...")
     (id_test_within_sim, id_test_within_sims,
      id_test_between_sim, id_test_between_sims,
-     id_test_group_means, id_test_all_sims) = calculate_metrics(id_test_vectors, id_test_all_vectors, ood=False)
+     id_test_between_allvec_sim, id_test_between_allvec_sims,
+     id_test_group_means,
+     id_test_all_sims) = calculate_metrics(id_test_vectors, id_test_all_vectors, ood=False)
     
-    print(f"  ID within-group sim (mean): {id_test_within_sim:.4f}")
-    print(f"  ID between-group sim (mean): {id_test_between_sim:.4f}")
+    print(f"  ID within-group sim (mean):          {id_test_within_sim:.4f}")
+    print(f"  ID between-group (centroids) sim:    {id_test_between_sim:.4f}")
+    print(f"  ID between-group (all vectors) sim:  {id_test_between_allvec_sim:.4f}")
 
     # =============== OOD Metrics ===============
     print("\nComputing OOD metrics...")
     (ood_within_sim, ood_within_sims,
      ood_between_sim, ood_between_sims,
-     ood_group_means, ood_all_sims) = calculate_metrics(ood_vectors, ood_all_vectors, ood=True)
+     ood_between_allvec_sim, ood_between_allvec_sims,
+     ood_group_means,
+     ood_all_sims) = calculate_metrics(ood_vectors, ood_all_vectors, ood=True)
     
-    print(f"  OOD within-group sim (mean): {ood_within_sim:.4f}")
-    print(f"  OOD between-group sim (mean): {ood_between_sim:.4f}")
+    print(f"  OOD within-group sim (mean):         {ood_within_sim:.4f}")
+    print(f"  OOD between-group (centroids) sim:   {ood_between_sim:.4f}")
+    print(f"  OOD between-group (all vectors) sim: {ood_between_allvec_sim:.4f}")
     if ood_all_sims:
-        print(f"  OOD all-vector sim (mean): {np.mean(ood_all_sims):.4f}")
+        print(f"  OOD all-vector sim (mean):           {np.mean(ood_all_sims):.4f}")
     else:
         print("  OOD all-vector sim: None (only one OOD vector?)")
 
@@ -449,31 +504,31 @@ def main():
     print("\nCross-Category Similarities...")
 
     # ID Train group mean vs ID Test group mean (same bridging)
-    id_train_gm= {}
+    id_train_gm = {}
     for be, vlist in id_train_vectors.items():
-        id_train_gm[be]= np.mean(vlist, axis=0)
-    id_test_gm= {}
+        id_train_gm[be] = np.mean(vlist, axis=0)
+    id_test_gm = {}
     for be, vlist in id_test_vectors.items():
-        id_test_gm[be]= np.mean(vlist, axis=0)
-    intersec= set(id_train_gm.keys()) & set(id_test_gm.keys())
+        id_test_gm[be] = np.mean(vlist, axis=0)
+    intersec = set(id_train_gm.keys()) & set(id_test_gm.keys())
     from scipy.spatial.distance import cosine
     def cosim(a,b): return 1- cosine(a,b)
-    id_train_test_sims= [ cosim(id_train_gm[be], id_test_gm[be]) for be in intersec ]
+    id_train_test_sims= [cosim(id_train_gm[be], id_test_gm[be]) for be in intersec]
     avg_id_train_test_sims= np.mean(id_train_test_sims) if id_train_test_sims else 0
     print(f"  (ID Train group mean vs ID Test group mean): {avg_id_train_test_sims:.4f}")
 
     # OOD global mean vs ID train means
-    if len(ood_group_means)>0:
-        ood_gm= np.mean(np.vstack(ood_group_means),axis=0)
-        id_train_ood_s= [ cosim(ood_gm,x) for x in id_train_group_means ]
+    if len(ood_group_means) > 0:
+        ood_gm= np.mean(np.vstack(ood_group_means), axis=0)
+        id_train_ood_s = [cosim(ood_gm,x) for x in id_train_group_means]
         avg_id_train_ood_s= np.mean(id_train_ood_s)
     else:
-        id_train_ood_s=[]
+        id_train_ood_s = []
         avg_id_train_ood_s=0
     print(f"  (OOD global vs ID train means): {avg_id_train_ood_s:.4f}")
 
     # OOD global mean vs ID test means
-    if len(ood_group_means)>0:
+    if len(ood_group_means) > 0:
         id_test_ood_s= [cosim(ood_gm,x) for x in id_test_group_means]
         avg_id_test_ood_s= np.mean(id_test_ood_s)
     else:
@@ -489,7 +544,8 @@ def main():
 
         f.write("=== ID Train ===\n")
         f.write(f"Within-group sim (mean): {id_train_within_sim:.4f}\n")
-        f.write(f"Between-group sim (mean): {id_train_between_sim:.4f}\n")
+        f.write(f"Between-group (centroids) sim (mean): {id_train_between_sim:.4f}\n")
+        f.write(f"Between-group (all vectors) sim (mean): {id_train_between_allvec_sim:.4f}\n")
         if id_train_all_sims:
             f.write(f"All-vector sim (mean): {np.mean(id_train_all_sims):.4f}\n\n")
         else:
@@ -497,7 +553,8 @@ def main():
 
         f.write("=== ID Test ===\n")
         f.write(f"Within-group sim (mean): {id_test_within_sim:.4f}\n")
-        f.write(f"Between-group sim (mean): {id_test_between_sim:.4f}\n")
+        f.write(f"Between-group (centroids) sim (mean): {id_test_between_sim:.4f}\n")
+        f.write(f"Between-group (all vectors) sim (mean): {id_test_between_allvec_sim:.4f}\n")
         if id_test_all_sims:
             f.write(f"All-vector sim (mean): {np.mean(id_test_all_sims):.4f}\n\n")
         else:
@@ -505,7 +562,8 @@ def main():
 
         f.write("=== OOD ===\n")
         f.write(f"Within-group sim (mean): {ood_within_sim:.4f}\n")
-        f.write(f"Between-group sim (mean): {ood_between_sim:.4f}\n")
+        f.write(f"Between-group (centroids) sim (mean): {ood_between_sim:.4f}\n")
+        f.write(f"Between-group (all vectors) sim (mean): {ood_between_allvec_sim:.4f}\n")
         if ood_all_sims:
             f.write(f"All-vector sim (mean): {np.mean(ood_all_sims):.4f}\n\n")
         else:
@@ -516,54 +574,109 @@ def main():
         f.write(f"(OOD global vs IDTrain means): {avg_id_train_ood_s:.4f}\n")
         f.write(f"(OOD global vs IDTest means): {avg_id_test_ood_s:.4f}\n")
 
+    # Optional PCA/t-SNE
     if args.pca_vis:
-        # create subdir
         dr_dir= output_dir / "pca"
         dr_dir.mkdir(exist_ok=True)
 
-        # e.g. "id_train_dim2_pca_global.png" or ".html"
-        # Assume you have your id_train_vectors, etc. from process_vectors
-
-        # ID train
-        out_id_train= dr_dir / f"id_train_dim{args.reduce_dim}_{args.reduce_method}_{args.pca_scope}.png"
+        # ID Train
+        out_id_train= dr_dir / f"id_train_dim2_pca_{args.pca_scope}.png"
         plot_embedding(
             grouped_vectors=id_train_vectors,
             output_path=out_id_train,
             m=args.pca_m, n=args.pca_n,
-            reduce_dim=args.reduce_dim,
-            reduce_method=args.reduce_method,
+            reduce_dim=2,
+            reduce_method="pca",
             scope=args.pca_scope,
             title=f"ID Train (Layer {target_layer})"
         )
-        # ID test
-        out_id_test= dr_dir / f"id_test_dim{args.reduce_dim}_{args.reduce_method}_{args.pca_scope}.png"
+        out_id_train= dr_dir / f"id_train_dim2_tsne_{args.pca_scope}.png"
+        plot_embedding(
+            grouped_vectors=id_train_vectors,
+            output_path=out_id_train,
+            m=args.pca_m, n=args.pca_n,
+            reduce_dim=2,
+            reduce_method="tsne",
+            scope=args.pca_scope,
+            title=f"ID Train (Layer {target_layer})"
+        )
+        out_id_train= dr_dir / f"id_train_dim3_tsne_{args.pca_scope}.png"
+        plot_embedding(
+            grouped_vectors=id_train_vectors,
+            output_path=out_id_train,
+            m=args.pca_m, n=args.pca_n,
+            reduce_dim=3,
+            reduce_method="tsne",
+            scope=args.pca_scope,
+            title=f"ID Train (Layer {target_layer})"
+        )
+        # ID Test
+        out_id_test= dr_dir / f"id_test_dim2_pca_{args.pca_scope}.png"
         plot_embedding(
             grouped_vectors=id_test_vectors,
             output_path=out_id_test,
             m=args.pca_m, n=args.pca_n,
-            reduce_dim=args.reduce_dim,
-            reduce_method=args.reduce_method,
+            reduce_dim=2,
+            reduce_method="pca",
+            scope=args.pca_scope,
+            title=f"ID Test (Layer {target_layer})"
+        )
+        out_id_test= dr_dir / f"id_test_dim2_tsne_{args.pca_scope}.png"
+        plot_embedding(
+            grouped_vectors=id_test_vectors,
+            output_path=out_id_test,
+            m=args.pca_m, n=args.pca_n,
+            reduce_dim=2,
+            reduce_method="tsne",
+            scope=args.pca_scope,
+            title=f"ID Test (Layer {target_layer})"
+        )
+        out_id_test= dr_dir / f"id_test_dim3_tsne_{args.pca_scope}.png"
+        plot_embedding(
+            grouped_vectors=id_test_vectors,
+            output_path=out_id_test,
+            m=args.pca_m, n=args.pca_n,
+            reduce_dim=3,
+            reduce_method="tsne",
             scope=args.pca_scope,
             title=f"ID Test (Layer {target_layer})"
         )
         # OOD
-        out_ood= dr_dir / f"ood_dim{args.reduce_dim}_{args.reduce_method}_{args.pca_scope}.png"
+        out_ood= dr_dir / f"ood_dim2_pca_{args.pca_scope}.png"
         plot_embedding(
             grouped_vectors=ood_vectors,
             output_path=out_ood,
             m=args.pca_m, n=args.pca_n,
-            reduce_dim=args.reduce_dim,
-            reduce_method=args.reduce_method,
+            reduce_dim=2,
+            reduce_method="pca",
             scope=args.pca_scope,
             title=f"OOD (Layer {target_layer})"
         )
-
+        out_ood= dr_dir / f"ood_dim2_tsne_{args.pca_scope}.png"
+        plot_embedding(
+            grouped_vectors=ood_vectors,
+            output_path=out_ood,
+            m=args.pca_m, n=args.pca_n,
+            reduce_dim=2,
+            reduce_method="tsne",
+            scope=args.pca_scope,
+            title=f"OOD (Layer {target_layer})"
+        )
+        out_ood= dr_dir / f"ood_dim3_tsne_{args.pca_scope}.png"
+        plot_embedding(
+            grouped_vectors=ood_vectors,
+            output_path=out_ood,
+            m=args.pca_m, n=args.pca_n,
+            reduce_dim=3,
+            reduce_method="tsne",
+            scope=args.pca_scope,
+            title=f"OOD (Layer {target_layer})"
+        )
 
     # -------------- NEW UTILITY: sample multiple random bridging groups --------------
     multi_range_file= output_dir / f"range_samples_layer{target_layer}.json"
     sample_references_and_collect_ranges_multi(id_train_instances, multi_range_file, n_groups=args.num_random_groups)
 
-    # Optionally skip plots
     if not args.save_plots:
         print("\nUser disabled plot saving; skipping figure generation.")
         return
@@ -575,10 +688,19 @@ def main():
     plot_comparison_distributions(
         id_train_within_sims,
         id_train_between_sims,
-        ['Within-group', 'Between-group'],
+        ['Within-group', 'Between-group(centroids)'],
         f'ID Train Similarity Distributions (Layer {target_layer})',
         output_dir / f'id_train_similarities_layer{target_layer}.png'
     )
+    # Also plot the new "between-group(all vectors)" distribution if it exists
+    if id_train_between_allvec_sims:
+        plot_comparison_distributions(
+            id_train_within_sims,
+            id_train_between_allvec_sims,
+            ['Within-group', 'Between-group(allvec)'],
+            f'ID Train Within vs. Between(AllVec) (Layer {target_layer})',
+            output_dir / f'id_train_within_vs_betweenall_layer{target_layer}.png'
+        )
     if id_train_all_sims and len(id_train_all_sims)>0:
         plot_similarity_distribution(
             id_train_all_sims,
@@ -591,10 +713,18 @@ def main():
     plot_comparison_distributions(
         id_test_within_sims,
         id_test_between_sims,
-        ['Within-group', 'Between-group'],
+        ['Within-group', 'Between-group(centroids)'],
         f'ID Test Similarities (Layer {target_layer})',
         output_dir / f'id_test_similarities_layer{target_layer}.png'
     )
+    if id_test_between_allvec_sims:
+        plot_comparison_distributions(
+            id_test_within_sims,
+            id_test_between_allvec_sims,
+            ['Within-group', 'Between-group(allvec)'],
+            f'ID Test Within vs. Between(AllVec) (Layer {target_layer})',
+            output_dir / f'id_test_within_vs_betweenall_layer{target_layer}.png'
+        )
     if id_test_all_sims and len(id_test_all_sims)>0:
         plot_similarity_distribution(
             id_test_all_sims,
@@ -607,10 +737,18 @@ def main():
     plot_comparison_distributions(
         ood_within_sims,
         ood_between_sims,
-        ['Within-group', 'Between-group'],
+        ['Within-group', 'Between-group(centroids)'],
         f'OOD Similarities (Layer {target_layer})',
         output_dir / f'ood_similarities_layer{target_layer}.png'
     )
+    if ood_between_allvec_sims:
+        plot_comparison_distributions(
+            ood_within_sims,
+            ood_between_allvec_sims,
+            ['Within-group', 'Between-group(allvec)'],
+            f'OOD Within vs. Between(AllVec) (Layer {target_layer})',
+            output_dir / f'ood_within_vs_betweenall_layer{target_layer}.png'
+        )
     if ood_all_sims and len(ood_all_sims)>0:
         plot_similarity_distribution(
             ood_all_sims,
@@ -631,7 +769,6 @@ def main():
         output_dir / f'id_test_ood_mean_similarities_layer{target_layer}.png',
         color='purple'
     )
-
     plot_comparison_distributions(
         id_train_within_sims,
         ood_within_sims,
