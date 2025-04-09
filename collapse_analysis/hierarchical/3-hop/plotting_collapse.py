@@ -294,8 +294,6 @@ def plot_embedding(
         print("reduce_dim must be 2 or 3.")
 
 def main():
-    import time
-    start = time.time()
     parser = argparse.ArgumentParser(description='Calculate and visualize similarity metrics for ID, OOD, and Nonsense vectors')
     parser.add_argument('--id_train_file', required=True, help='Path to the ID Train vector file')
     parser.add_argument('--id_test_file', required=True, help='Path to the ID Test vector file')
@@ -318,15 +316,14 @@ def main():
     parser.add_argument('--pca_n', type=int, default=20)
     
     args = parser.parse_args()
-    print(args)
     
     # Create output directory
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    matches = re.findall(r"\(\d+,\s*\d+\)", args.output_dir)
+    matches = re.findall(r"\((logit|\d+),(\d+)\)", args.output_dir)
     assert len(matches) == 1, "Expected exactly one (layer, pos) pattern in output_dir name."
-    target_layer = matches[0].strip(")(").split(",")[0]
+    target_layer = matches[0][0]
 
     metrics_json_file = output_dir / "metrics_results.json"
 
@@ -561,8 +558,6 @@ def main():
     )
 
     print("Finished all computations and plots!")
-    end = time.time()
-    print(f"\n✅ 실행 시간: {end-start:.2f}초")
 
 if __name__ == "__main__":
     main()

@@ -6,6 +6,7 @@ import os
 from transformers import GPT2LMHeadModel, GPT2Tokenizer
 import logging
 from collections import defaultdict
+import re
 
 
 def setup_logging(debug_mode):
@@ -99,6 +100,34 @@ def group_data_by_t_final(examples, f1_dict, f2_dict, f3_dict):
         group_dict[t_final].append(ex)
     return dict(group_dict)
 
+def group_data_by_b2_e3(examples, f1_dict, f2_dict):
+    """
+    Returns a dictionary mapping (b2, e3) pair to a list of examples.
+    """
+    group_dict = defaultdict(list)
+    for ex in examples:
+        inp_tokens = parse_tokens(ex["input_text"])
+        assert len(inp_tokens) == 4
+        t1, t2, t3, t4 = inp_tokens
+        b1 = f1_dict.get((t1, t2))
+        b2 = f2_dict.get((b1, t3))
+        group_dict[f"{t3},{b2}"].append(ex)
+    return dict(group_dict)
+
+def group_data_by_b1_b2(examples, f1_dict, f2_dict):
+    """
+    Returns a dictionary mapping (b1, b2) pair to a list of examples.
+    """
+    group_dict = defaultdict(list)
+    for ex in examples:
+        inp_tokens = parse_tokens(ex["input_text"])
+        assert len(inp_tokens) == 4
+        t1, t2, t3, _ = inp_tokens
+        b1 = f1_dict.get((t1, t2))
+        b2 = f2_dict.get((b1, t3))
+        group_dict[f"{b1},{b2}"].append(ex)
+    return dict(group_dict)
+
 
 ###############################################################################
 # 3) Deduplication and Hooking Logic (Improved Deduplication)
@@ -178,7 +207,7 @@ def deduplicate_grouped_data(grouped_data, atomic_idx):
             tokens = parse_tokens(entry["target_text"])
             if atomic_idx == 1:
                 dedup_key = tuple(tokens[:2])  # (t1, t2)
-            elif atomic_idx == 2:
+            elif atomic_idx == 2 or atomic_idx == 4 or atomic_idx == 5:
                 dedup_key = tuple(tokens[:3])  # (t1, t2, t3)
             elif atomic_idx == 3:
                 dedup_key = tuple(tokens[:4])  # (t1, t2, t3, t4)
@@ -219,6 +248,12 @@ def load_and_preprocess_data(f1_dict, f2_dict, f3_dict, test_path, idx):
             elif idx == 3:
                 if d['type'] in ['type_1', 'type_3', 'type_5', 'type_7']:
                     ood_test_data.append(d)
+            elif idx == 4:
+                if d['type'] in ['type_1', 'type_2', 'type_5', 'type_6']:
+                    ood_test_data.append(d)
+            elif idx == 5:
+                if d['type'] in ['type_1', 'type_2']:
+                    ood_test_data.append(d)
             else:
                 raise NotImplementedError(f"Invalid idx value: {idx}")
         else:
@@ -238,6 +273,14 @@ def load_and_preprocess_data(f1_dict, f2_dict, f3_dict, test_path, idx):
         grouped_id_train_data = group_data_by_t_final(id_train_data, f1_dict, f2_dict, f3_dict)
         grouped_id_test_data = group_data_by_t_final(id_test_data, f1_dict, f2_dict, f3_dict)
         grouped_ood_test_data = group_data_by_t_final(ood_test_data, f1_dict, f2_dict, f3_dict)
+    elif idx == 4:
+        grouped_id_train_data = group_data_by_b2_e3(id_train_data, f1_dict, f2_dict)
+        grouped_id_test_data = group_data_by_b2_e3(id_test_data, f1_dict, f2_dict)
+        grouped_ood_test_data = group_data_by_b2_e3(ood_test_data, f1_dict, f2_dict)
+    elif idx == 5:
+        grouped_id_train_data = group_data_by_b1_b2(id_train_data, f1_dict, f2_dict)
+        grouped_id_test_data = group_data_by_b1_b2(id_test_data, f1_dict, f2_dict)
+        grouped_ood_test_data = group_data_by_b1_b2(ood_test_data, f1_dict, f2_dict)
     else:
         raise NotImplementedError
     
@@ -263,7 +306,7 @@ def get_hidden_states_residual(model, input_texts, layer_pos_pairs, tokenizer, d
         instance_hidden_states = []
         for layer, pos in layer_pos_pairs:
             try:
-                hs = all_hidden_states[layer]
+                hs = outputs.logits if layer == "logit" else all_hidden_states[layer]
                 if hs.dim() == 3:
                     token_vec = hs[i, pos, :].detach().cpu().numpy()
                 elif hs.dim() == 2:
@@ -303,6 +346,7 @@ def get_hidden_states_mlp(model, input_texts, layer_pos_pairs, tokenizer, device
     
     hooks = []
     for layer, pos in layer_pos_pairs:
+        assert type(layer) == int
         if layer > 0:
             hooks.append(model.transformer.h[layer-1].attn.register_forward_hook(get_activation(f'layer{layer}_attn')))
             hooks.append(model.transformer.h[layer-1].mlp.register_forward_hook(get_activation(f'layer{layer}_mlp')))
@@ -371,7 +415,7 @@ def process_data_group(model, data_group, layer_pos_pairs, tokenizer, device, mo
     for bridge_entity, instances in tqdm(data_group.items(), desc="Processing instances"):
         for i in range(0, len(instances), batch_size):
             batch = instances[i:i+batch_size]
-            input_texts = [ex['input_text'] for ex in batch]
+            input_texts = [ex['target_text'] for ex in batch]
             if mode == "residual":
                 batch_hidden_states = get_hidden_states_residual(model, input_texts, layer_pos_pairs, tokenizer, device)
             else:
@@ -411,9 +455,9 @@ def main():
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
     if args.ckpt.split("/")[-1] == "":
-        dataset, step = args.ckpt.split("/")[-3].split("_")[0], args.ckpt.split("/")[-2].split("-")[-1]
+        dataset, step = args.ckpt.split("/")[-3].split("_")[0], "final_checkpoint" if args.ckpt.split("/")[-2] == "final_checkpoint" else args.ckpt.split("/")[-2].split("-")[-1]
     else:
-        dataset, step = args.ckpt.split("/")[-2].split("_")[0], args.ckpt.split("/")[-1].split("-")[-1]
+        dataset, step = args.ckpt.split("/")[-2].split("_")[0], "final_checkpoint" if args.ckpt.split("/")[-1] == "final_checkpoint" else args.ckpt.split("/")[-1].split("-")[-1]
     
     logging.info("Loading model and tokenizer...")
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
@@ -437,7 +481,18 @@ def main():
         f1_dict, f2_dict, f3_dict, os.path.join(data_dir, "test.json"), idx=args.atomic_idx
     )
     
-    layer_pos_pairs = eval(args.layer_pos_pairs)
+    # 정규식을 사용한 파싱 로직
+    if "logit" in args.layer_pos_pairs:
+        # 정규식으로 숫자 추출
+        pos_match = re.search(r"\((logit|\d+),(\d+)\)", args.layer_pos_pairs)
+        if pos_match:
+            pos = int(pos_match.group(2))
+            layer_pos_pairs = [('logit', pos)]
+        else:
+            layer_pos_pairs = [('logit', 0)]  # 기본값
+    else:
+        layer_pos_pairs = eval(args.layer_pos_pairs)
+    
     logging.info(f"Layer position pairs: {layer_pos_pairs}")
     
     logging.info(f"ID train targets: {len(grouped_id_train_data)}")
@@ -474,10 +529,11 @@ def main():
     logging.info("Deduplicating OOD test results...")
     ood_dedup = deduplicate_grouped_data(ood_test_results, args.atomic_idx)
     
-    save_dir = os.path.join(args.save_dir, args.mode, dataset, f"f{args.atomic_idx}", f"{str(layer_pos_pairs[0]).replace(' ', '')}", step)
+    # 작은따옴표를 제거한 경로 생성
+    layer_pos_str = str(layer_pos_pairs[0]).replace("'", "").replace(" ", "")
+    save_dir = os.path.join(args.save_dir, args.mode, dataset, f"f{args.atomic_idx}", layer_pos_str, step)
     if os.path.exists(save_dir):
         logging.info(f"{save_dir} already exists!")
-        return
     else:
         os.makedirs(save_dir, exist_ok=True)
 

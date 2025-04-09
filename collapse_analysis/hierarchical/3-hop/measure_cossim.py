@@ -27,7 +27,7 @@ def process_vectors(data, layer):
     Convert the JSON data into grouped_vectors and all_vectors lists.
     Also store 'grouped_instances' => bridging -> list of (vector, input_text).
     """
-    print(f"\nProcessing vectors for layer {layer}.")
+    # print(f"\nProcessing vectors for layer {layer}.")
     grouped_vectors = defaultdict(list)
     grouped_instances = defaultdict(list)
     all_vectors = []
@@ -409,9 +409,9 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    matches = re.findall(r"\(\d+,\s*\d+\)", args.output_dir)
+    matches = re.findall(r"\((logit|\d+),(\d+)\)", args.output_dir)
     assert len(matches) == 1, "Expected exactly one (layer, pos) pattern in output_dir name."
-    target_layer = matches[0].strip(")(").split(",")[0]
+    target_layer = matches[0][0]
 
     results_file_name = output_dir / f"similarity_metrics_layer{target_layer}.txt"
     metrics_json_file = output_dir / "metrics_results.json"
