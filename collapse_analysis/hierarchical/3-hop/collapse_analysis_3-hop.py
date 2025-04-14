@@ -306,7 +306,13 @@ def get_hidden_states_residual(model, input_texts, layer_pos_pairs, tokenizer, d
         instance_hidden_states = []
         for layer, pos in layer_pos_pairs:
             try:
-                hs = outputs.logits if layer == "logit" else all_hidden_states[layer]
+                if layer == "logit":
+                    hs = outputs.logits
+                elif layer == "prob":
+                    hs = torch.nn.functional.softmax(outputs.logits, dim=-1)
+                else:
+                    hs = all_hidden_states[layer]
+                
                 if hs.dim() == 3:
                     token_vec = hs[i, pos, :].detach().cpu().numpy()
                 elif hs.dim() == 2:
@@ -482,12 +488,13 @@ def main():
     )
     
     # 정규식을 사용한 파싱 로직
-    if "logit" in args.layer_pos_pairs:
+    if "logit" in args.layer_pos_pairs or "prob" in args.layer_pos_pairs:
         # 정규식으로 숫자 추출
-        pos_match = re.search(r"\((logit|\d+),(\d+)\)", args.layer_pos_pairs)
+        pos_match = re.search(r"\((logit|prob|\d+),(\d+)\)", args.layer_pos_pairs)
         if pos_match:
+            layer_type = pos_match.group(1)
             pos = int(pos_match.group(2))
-            layer_pos_pairs = [('logit', pos)]
+            layer_pos_pairs = [(layer_type, pos)]
         else:
             layer_pos_pairs = [('logit', 0)]  # 기본값
     else:

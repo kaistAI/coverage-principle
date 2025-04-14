@@ -401,7 +401,6 @@ def main():
     parser.add_argument('--id_test_file', required=True, help='Path to the ID Test vector file')
     parser.add_argument('--ood_file', required=True, help='Path to the OOD vector file')
     parser.add_argument('--output_dir', required=True, help='Directory to save the plots and results')
-    parser.add_argument('--num_random_groups', type=int, default=50, help="Number of random bridging groups to sample")
     
     args = parser.parse_args()
     
@@ -409,7 +408,7 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    matches = re.findall(r"\((logit|\d+),(\d+)\)", args.output_dir)
+    matches = re.findall(r"\((logit|prob|\d+),(\d+)\)", args.output_dir)
     assert len(matches) == 1, "Expected exactly one (layer, pos) pattern in output_dir name."
     target_layer = matches[0][0]
 

@@ -321,7 +321,7 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    matches = re.findall(r"\((logit|\d+),(\d+)\)", args.output_dir)
+    matches = re.findall(r"\((logit|prob|\d+),(\d+)\)", args.output_dir)
     assert len(matches) == 1, "Expected exactly one (layer, pos) pattern in output_dir name."
     target_layer = matches[0][0]
 
