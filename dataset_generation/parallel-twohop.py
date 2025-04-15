@@ -115,12 +115,13 @@ def main():
                         help="If true, include atomic facts in the training set.")
     args = parser.parse_args()
 
-    # 1) Setup
     setup_logging(args.debug)
     np.random.seed(args.seed)
     random.seed(args.seed)
 
-    # 2) Create vocab, domain, codomain
+    # ------------------------------------------------------
+    # 1) Vocab
+    # ------------------------------------------------------
     vocab = [f"<t_{i}>" for i in range(args.num_tokens)] + ["</a>"]
     domain = list(itertools.product(range(args.num_tokens), range(args.num_tokens)))
     codomain = list(range(args.num_tokens))

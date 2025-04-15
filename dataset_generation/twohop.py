@@ -176,7 +176,7 @@ def main():
     vocab = [f"<t_{i}>" for i in range(args.num_tokens)]
     if args.fake_bridge:
         vocab.append("</b>")
-    vocab.append("</a>")  
+    vocab.append("</a>")
     # So if fake_bridge is true => vocab has an extra token: </b>
 
     # For a 2-hop chain: f1 domain is (e0,e1), f2 domain is (b1,e2).

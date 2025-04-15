@@ -3,135 +3,10 @@ import torch
 import json
 from tqdm import tqdm
 import os
-from transformers import GPT2LMHeadModel, GPT2Tokenizer
+from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
 import logging
 from collections import defaultdict
 import re
-
-
-def setup_logging(debug_mode):
-    level = logging.DEBUG if debug_mode else logging.INFO
-    logging.basicConfig(level=level, format='%(levelname)s - %(message)s')
-
-
-def load_and_preprocess_data(train_path, test_path, merge_id_data=False):
-    with open(train_path, 'r') as f:
-        train_data = json.load(f)
-
-    with open(test_path, 'r') as f:
-        test_data = json.load(f)
-
-    # Filter train data to include only atomic fact
-    filtered_train_data = [
-        instance for instance in train_data
-        if re.match(r'^<e_\d+><r_\d+>$', instance['input_text'])
-    ]
-
-    # Create a lookup dictionary for filtered train data
-    train_lookup = {}   # <h><r1> -> <t>
-    for instance in filtered_train_data:
-        input_text = instance['input_text']
-        target_entities = re.findall(r'<e_\d+>', instance['target_text'])
-        if len(target_entities) == 2:
-            train_lookup[input_text] = target_entities[1]
-        else:
-            logging.warning(f"Unexpected target format: {instance['target_text']}")
-
-    # Group test data based on bridge entity
-    # <b> -> [{}, {}, ...]
-    grouped_id_train_data = defaultdict(list)
-    grouped_id_test_data = defaultdict(list)
-    grouped_ood_test_data = defaultdict(list)
-    grouped_nonsense_test_data = defaultdict(list)
-
-    for instance in test_data:
-        # Extract <h><r1> from test data
-        input_prefix = '><'.join(instance['input_text'].split('><')[:2]) + '>'
-        if input_prefix.endswith('>>'):
-            input_prefix = input_prefix[:-1]
-        identified_bridge_entity = train_lookup.get(input_prefix, 'unknown')
-        # Sanity Check 'unknown' is only for test_nonsenses
-        if identified_bridge_entity == 'unknown':
-            assert not re.match(r'^<e_\d+><r_\d+>$', input_prefix)
-        else:
-            assert re.match(r'^<e_\d+><r_\d+>$', input_prefix)
-
-        if instance.get('type') == None:
-            logging.warning(f"Unexpected data format - There is no type: {instance}")
-        elif instance['type'] == 'train_inferred':
-            grouped_id_train_data[identified_bridge_entity].append(instance)
-        elif instance['type'] == 'test_inferred_id':
-            grouped_id_test_data[identified_bridge_entity].append(instance)
-        elif instance['type'] == 'test_inferred_ood':
-            grouped_ood_test_data[identified_bridge_entity].append(instance)
-        elif instance['type'] == 'test_nonsenses':
-            # ?. 얘는 bridge entity로 뷴류하는 것 없이 그냥 다 저장하는 게 맞나?
-            grouped_nonsense_test_data[instance['target_text']].append(instance)
-
-    if merge_id_data:
-        merged_id_data = defaultdict(list)
-        for key in set(grouped_id_train_data.keys()).union(grouped_id_test_data.keys()):
-            merged_id_data[key].extend(grouped_id_train_data.get(key, []))
-            merged_id_data[key].extend(grouped_id_test_data.get(key, []))
-        return filtered_train_data, merged_id_data, grouped_ood_test_data, grouped_nonsense_test_data
-    else:
-        return filtered_train_data, (grouped_id_train_data, grouped_id_test_data), grouped_ood_test_data, grouped_nonsense_test_data
-
-
-def get_hidden_states(model, input_text, layer_pos_pairs, tokenizer, device):
-    inputs = tokenizer(input_text, return_tensors="pt").to(device)
-    
-    with torch.no_grad():
-        outputs = model(**inputs, output_hidden_states=True)
-    all_hidden_states = outputs["hidden_states"]
-    
-    hidden_states = []
-    for layer, pos in layer_pos_pairs:
-        try:
-            post_block = all_hidden_states[layer]
-            if len(post_block.shape) == 3:
-                post_block = post_block[0, pos, :].detach().cpu().numpy()
-            elif len(post_block.shape) == 2:
-                post_block = post_block[pos, :].detach().cpu().numpy()
-            else:
-                logging.warning(f"Unexpected shape for residual stream output: {post_block.shape}")
-                post_block = None
-
-            hidden_states.append({
-                'layer': layer,
-                'position': pos,
-                'post_attention': None,
-                'post_mlp': post_block.tolist() if post_block is not None else None
-            })
-        except Exception as e:
-            logging.error(f"Error processing layer {layer}, position {pos}: {str(e)}")
-            hidden_states.append({
-                'layer': layer,
-                'position': pos,
-                'error': str(e)
-            })
-    return hidden_states
-
-def process_data_group(model, data_group, layer_pos_pairs, tokenizer, device):
-    results = defaultdict(list)
-    for bridge_entity, instances in tqdm(data_group.items(), desc="Processing instances"):
-        for instance in instances:
-            logging.debug(f"Processing instance of type: {instance.get('type')}")
-            logging.debug(f"Input text: {instance['input_text'][:50]}...")
-            
-            hidden_states = get_hidden_states(model, instance['input_text'], layer_pos_pairs, tokenizer, device)
-            
-            result = {
-                "input_text": instance['input_text'],
-                "target_text": instance['target_text'],
-                "identified_target": bridge_entity,
-                "type": instance.get('type'),
-                "hidden_states": hidden_states
-            }
-            
-            results[bridge_entity].append(result)
-            logging.debug(f"Added result for target: {bridge_entity}")
-    return results
 
 def deduplicate_vectors(results):
     """
@@ -167,11 +42,11 @@ def deduplicate_vectors(results):
             vectors.append(tuple(hidden_state['post_mlp']))
         return tuple(vectors)
 
-    for bridge_entity, instances in results.items():
+    for target, instances in results.items():
         seen_vectors = defaultdict(set)  # (layer, position) -> set of vector tuples
-        logging.info(f"Performing deduplication for target {bridge_entity}")
+        logging.info(f"Performing deduplication for target {target}")
 
-        for instance in tqdm(instances, desc=f"Processing target {bridge_entity}"):
+        for instance in tqdm(instances, desc=f"Processing target {target}"):
             is_duplicate = False
 
             # Track duplicates for each hidden state
@@ -183,12 +58,11 @@ def deduplicate_vectors(results):
                 # Check if we've seen this vector before
                 is_vec_duplicate = False
                 for seen_vec in seen_vectors[(layer, pos)]:
-                    # post_mlp, post_attention 모두 equal하다고 나와야함
                     if all(vectors_equal(v1, v2) for v1, v2 in zip(vector_key, seen_vec)):
                         is_vec_duplicate = True
-                        dedup_stats[bridge_entity][f"layer{layer}_pos{pos}"] += 1
+                        dedup_stats[target][f"layer{layer}_pos{pos}"] += 1
                         break
-                # 하나의 instance 당 여러 (layer, pos)에 대한 hidden representation을 저장하고 있을 경우, 하나만 동일해도 duplicate라고 인식
+
                 if is_vec_duplicate:
                     is_duplicate = True
                     break
@@ -197,14 +71,189 @@ def deduplicate_vectors(results):
 
             # If instance is not a duplicate, add it to deduplicated results
             if not is_duplicate:
-                deduplicated_results[bridge_entity].append(instance)
+                deduplicated_results[target].append(instance)
 
     # Convert defaultdict to regular dict with string keys
     final_stats = {}
-    for bridge_entity, stats in dedup_stats.items():
-        final_stats[bridge_entity] = dict(stats)
+    for target, stats in dedup_stats.items():
+        final_stats[target] = dict(stats)
 
     return dict(deduplicated_results), final_stats
+
+
+def setup_logging(debug_mode):
+    level = logging.DEBUG if debug_mode else logging.INFO
+    logging.basicConfig(level=level, format='%(asctime)s - %(levelname)s - %(message)s')
+
+
+def load_and_preprocess_data(train_path, test_path, merge_id_data=False):
+    with open(train_path, 'r') as f:
+        train_data = json.load(f)
+
+    with open(test_path, 'r') as f:
+        test_data = json.load(f)
+
+    # Filter train data to include only instances with two entities in input_text (atomic fact)
+    filtered_train_data = [
+        instance for instance in train_data
+        if re.match(r'^<e_\d+><r_\d+>$', instance['input_text'])
+    ]
+
+    # Create a lookup dictionary for filtered train data
+    train_lookup = {}
+    for instance in filtered_train_data:
+        input_text = instance['input_text']
+        target_entities = re.findall(r'<e_\d+>', instance['target_text'])
+        if len(target_entities) == 2:
+            train_lookup[input_text] = target_entities[1]
+        else:
+            logging.warning(f"Unexpected target format: {instance['target_text']}")
+
+    # Group test data based on identified targets
+    grouped_id_train_data = defaultdict(list)
+    grouped_id_test_data = defaultdict(list)
+    grouped_ood_test_data = defaultdict(list)
+    grouped_nonsense_test_data = defaultdict(list)
+
+    for instance in test_data:
+        # Extract <e_N1><r_r1> from test data
+        input_prefix = '><'.join(instance['input_text'].split('><')[:2]) + '>'
+        if input_prefix.endswith('>>'):
+            input_prefix = input_prefix[:-1]
+        identified_bridge_entity = train_lookup.get(input_prefix, 'unknown')
+        # Sanity Check 'unknown' is only for test_nonsenses
+        if identified_bridge_entity == 'unknown':
+            assert not re.match(r'^<e_\d+><r_\d+>$', input_prefix)
+        else:
+            assert re.match(r'^<e_\d+><r_\d+>$', input_prefix)
+
+        if instance.get('type') == None:
+            logging.warning(f"Unexpected data format - There is no type: {instance}")
+        elif instance['type'] == 'train_inferred':
+            grouped_id_train_data[identified_bridge_entity].append(instance)
+        elif instance['type'] == 'test_inferred_id':
+            grouped_id_test_data[identified_bridge_entity].append(instance)
+        elif instance['type'] == 'test_inferred_ood':
+            grouped_ood_test_data[identified_bridge_entity].append(instance)
+        elif instance['type'] == 'test_nonsenses':
+            # ?. 얘는 bridge entity로 뷴류하는 것 없이 그냥 다 저장하는 게 맞나?
+            grouped_nonsense_test_data[instance['target_text']].append(instance)
+
+    if merge_id_data:
+        merged_id_data = defaultdict(list)
+        for key in set(grouped_id_train_data.keys()).union(grouped_id_test_data.keys()):
+            merged_id_data[key].extend(grouped_id_train_data.get(key, []))
+            merged_id_data[key].extend(grouped_id_test_data.get(key, []))
+        return filtered_train_data, merged_id_data, grouped_ood_test_data, grouped_nonsense_test_data
+    else:
+        return filtered_train_data, (grouped_id_train_data, grouped_id_test_data), grouped_ood_test_data, grouped_nonsense_test_data
+
+
+def get_hidden_states(model, input_text, layer_pos_pairs, tokenizer, device):
+    inputs = tokenizer(input_text, return_tensors="pt").to(device)
+
+    activation = {}
+    def get_activation(name):
+        def hook(model, input, output):
+            activation[name] = output
+        return hook
+
+    hooks = []
+    # Register hooks for transformer layers (now indexed from 1 to 8)
+    for layer, pos in layer_pos_pairs:
+        if layer > 0:  # Skip layer 0 as it's handled separately
+            hooks.append(model.transformer.h[layer-1].attn.register_forward_hook(
+                get_activation(f'layer{layer}_attn')))
+            hooks.append(model.transformer.h[layer-1].mlp.register_forward_hook(
+                get_activation(f'layer{layer}_mlp')))
+
+    with torch.no_grad():
+        outputs = model(**inputs, output_hidden_states=True)
+
+    for hook in hooks:
+        hook.remove()
+
+    hidden_states = []
+    for layer, pos in layer_pos_pairs:
+        try:
+            if layer == 0:
+                # Handle word embeddings (layer 0)
+                word_embeddings = model.transformer.wte(inputs['input_ids'])
+                hidden_state = word_embeddings[0, pos, :].detach().cpu().numpy()
+                hidden_states.append({
+                    'layer': layer,
+                    'position': pos,
+                    'embedding': hidden_state.tolist()
+                })
+            else:
+                # Handle transformer layers (1 to 8)
+                post_attention = activation[f'layer{layer}_attn']
+                post_mlp = activation[f'layer{layer}_mlp']
+                
+                logging.debug(f"Layer {layer} attention output type: {type(post_attention)}")
+                logging.debug(f"Layer {layer} MLP output type: {type(post_mlp)}")
+                
+                if isinstance(post_attention, tuple):
+                    post_attention = post_attention[0]
+                if isinstance(post_mlp, tuple):
+                    post_mlp = post_mlp[0]
+
+                logging.debug(f"Layer {layer} attention output shape: {post_attention.shape}")
+                logging.debug(f"Layer {layer} MLP output shape: {post_mlp.shape}")
+
+                if len(post_attention.shape) == 3:
+                    post_attention = post_attention[0, pos, :].detach().cpu().numpy()
+                elif len(post_attention.shape) == 2:
+                    post_attention = post_attention[pos, :].detach().cpu().numpy()
+                else:
+                    logging.warning(f"Unexpected shape for attention output: {post_attention.shape}")
+                    post_attention = None
+
+                if len(post_mlp.shape) == 3:
+                    post_mlp = post_mlp[0, pos, :].detach().cpu().numpy()
+                elif len(post_mlp.shape) == 2:
+                    post_mlp = post_mlp[pos, :].detach().cpu().numpy()
+                else:
+                    logging.warning(f"Unexpected shape for MLP output: {post_mlp.shape}")
+                    post_mlp = None
+
+                hidden_states.append({
+                    'layer': layer,
+                    'position': pos,
+                    'post_attention': post_attention.tolist() if post_attention is not None else None,
+                    'post_mlp': post_mlp.tolist() if post_mlp is not None else None
+                })
+        except Exception as e:
+            logging.error(f"Error processing layer {layer}, position {pos}: {str(e)}")
+            hidden_states.append({
+                'layer': layer,
+                'position': pos,
+                'error': str(e)
+            })
+
+    return hidden_states
+
+
+def process_data_group(model, data_group, layer_pos_pairs, tokenizer, device):
+    results = defaultdict(list)
+    for target, instances in tqdm(data_group.items(), desc="Processing instances"):
+        for instance in instances:
+            logging.debug(f"Processing instance of type: {instance.get('type', 'test_inferred_iid')}")
+            logging.debug(f"Input text: {instance['input_text'][:50]}...")
+            
+            hidden_states = get_hidden_states(model, instance['input_text'], layer_pos_pairs, tokenizer, device)
+            
+            result = {
+                "input_text": instance['input_text'],
+                "target_text": instance['target_text'],
+                "identified_target": target,
+                "type": instance.get('type', 'test_inferred_iid'),
+                "hidden_states": hidden_states
+            }
+            
+            results[target].append(result)
+            logging.debug(f"Added result for target: {target}")
+    return results
 
 
 
@@ -237,7 +286,7 @@ def main():
     tokenizer.pad_token_id = tokenizer.eos_token_id
     model.config.pad_token_id = model.config.eos_token_id
     logging.info("Model and tokenizer loaded successfully")
-    
+
     data_dir = os.path.join(base_dir, "data", dataset)
     if "inf" in dataset:
         filtered_train_data, id_data, grouped_ood_test_data, grouped_nonsense_test_data = load_and_preprocess_data(
@@ -254,7 +303,7 @@ def main():
         
     logging.info(f"Number of filtered train instances: {len(filtered_train_data)}")
     if args.merge_id_data:
-        logging.info(f"Number of unique bridge entity in ID: {len(id_data)}")
+        logging.info(f"Number of unique ID targets: {len(id_data)}")
     else:
         grouped_id_train_data, grouped_id_test_data = id_data
         logging.info(f"Number of unique ID train targets: {len(grouped_id_train_data)}")
@@ -267,9 +316,9 @@ def main():
     
     # ToDo : If the code is changed to support multiple layer_pos_pairs, should change save_dir for each layer_pos_pair
     if args.merge_id_data:
-        save_dir = os.path.join(args.save_dir, "residual", dataset, "merged_id", str(layer_pos_pairs[0]).replace(" ", ""), step)
+        save_dir = os.path.join(args.save_dir, dataset, "merged_id", str(layer_pos_pairs[0]).replace(" ", ""), step)
     else:
-        save_dir = os.path.join(args.save_dir, "residual", dataset, str(layer_pos_pairs[0]).replace(" ", ""), step)
+        save_dir = os.path.join(args.save_dir, dataset, str(layer_pos_pairs[0]).replace(" ", ""), step)
     if os.path.exists(save_dir):
         logging.info(f"{save_dir} already exist!!!")
         return
