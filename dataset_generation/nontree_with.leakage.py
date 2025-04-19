@@ -149,7 +149,7 @@ def main():
                         help="Ratio of the domain considered 'seen' for each function (f1, f2).")
     parser.add_argument("--max_train_data_num", type=int, default=382000,
                         help="Maximum number of 2-hop samples in the training set.")
-    parser.add_argument("--test_size_for_type", type=int, default=2000,
+    parser.add_argument("--test_size_for_type", type=int, default=3000,
                         help="Number of final test samples for each coverage type.")
     parser.add_argument("--debug", action="store_true",
                         help="Enable debug-level logging (more verbose).")
@@ -273,7 +273,7 @@ def main():
     coverage_reservoirs = defaultdict(list)
     coverage_seen_count = defaultdict(int)
 
-    skip_p = 0.2
+    skip_p = 0.4
 
     for (h1_idx, h2_idx), b1_idx in f1_dict.items():
         if random.random() > (1 - skip_p):
@@ -283,8 +283,6 @@ def main():
         if (b1_idx, h2_idx) not in f2_index:
             continue
         for (h3_idx, t_idx) in f2_index[(b1_idx, h2_idx)]:
-            if (h1_idx, h2_idx, h3_idx, t_idx) in train_inferred_idx_set:
-                continue
             if random.random() > (1 - skip_p):
                 continue
             sc2 = ((b1_idx, h2_idx, h3_idx) in S_f2)
@@ -376,7 +374,7 @@ def main():
     mode_str = "cot" if args.cot else "inf"
     save_dir = os.path.join(
         base_dir,
-        "data_fixed",
+        "data",
         f"nontree.{args.num_tokens}.{args.max_train_data_num}.{'same-f12' if args.same_f12 else 'diff-f12'}.{mode_str}"
     )
     os.makedirs(save_dir, exist_ok=True)

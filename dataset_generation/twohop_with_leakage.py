@@ -154,7 +154,7 @@ def main():
                         help="Ratio of the domain considered 'seen' for each function (f1, f2).")
     parser.add_argument("--max_train_data_num", type=int, default=382000,
                         help="Maximum number of 2-hop samples in the training set.")
-    parser.add_argument("--test_size_for_type", type=int, default=2000,
+    parser.add_argument("--test_size_for_type", type=int, default=3000,
                         help="Number of final test samples for each coverage type.")
     parser.add_argument("--debug", action="store_true",
                         help="Enable debug-level logging.")
@@ -264,9 +264,6 @@ def main():
         sc1 = ((h1_idx, h2_idx) in S_f1)
 
         for (h3_idx, t_idx) in f2_index[b1_idx]:
-            if (h1_idx, h2_idx, h3_idx, t_idx) in train_inferred_idx_set:
-                continue
-            
             if random.random() > (1 - skip_p):
                 continue
             sc2 = ((b1_idx, h3_idx) in S_f2)
@@ -347,7 +344,7 @@ def main():
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     save_dir = os.path.join(
         base_dir, 
-        "data_fixed",
+        "data",
         f"twohop.{args.num_tokens}.{args.max_train_data_num}.{'same-f12' if args.same_f12 else 'diff-f12'}.{mode_str}"
     )
     os.makedirs(save_dir, exist_ok=True)
