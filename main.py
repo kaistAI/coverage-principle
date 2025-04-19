@@ -73,9 +73,9 @@ def main():
     parser.add_argument('--rank', default=-1, type=int, help='node rank for distributed training')
     parser.add_argument('--dist-url', default='env://', type=str, help='url used to set up distributed training')
     parser.add_argument('--dist-backend', default='nccl', type=str, help='distributed backend')
-    parser.add_argument('--local_rank', default=-1, type=int, help='local rank for distributed training')
+    # parser.add_argument('--local_rank', default=-1, type=int, help='local rank for distributed training')
     # This is for updated Pytorch
-    # parser.add_argument('--local-rank', default=-1, type=int, help='local rank for distributed training')
+    parser.add_argument('--local-rank', default=-1, type=int, help='local rank for distributed training')
     parser.add_argument('--gpu', default=None, type=int)
     
     # wandb config
@@ -195,6 +195,7 @@ def main():
         re_embed=args.re_embed,
         re_embed_temp=args.re_embed_temp,
         relation_mean_shift=args.relation_mean_shift,
+        do_eval=args.do_eval,
     )
 
     # Train the model
