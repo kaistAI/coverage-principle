@@ -182,6 +182,7 @@ class Seq2SeqModel:
         re_embed_temp=None,
         cuda_device=-1,
         relation_mean_shift=False,
+        do_eval=True,
         **kwargs,
     ):
 
@@ -386,6 +387,8 @@ class Seq2SeqModel:
 
         self.args.model_type = model_type
         self.args.model_name = model_name
+        
+        self.do_eval = do_eval
 
         print("### general model args:")
         print(self.args)
@@ -812,6 +815,37 @@ class Seq2SeqModel:
             std_ID = torch.std(word_embedding[self.ID_relation_ids], dim=0)
             std_OOD = torch.std(word_embedding[self.OOD_relation_ids], dim=0)
             model.lm.lm_head.weight.data[self.OOD_relation_ids] = (word_embedding[self.OOD_relation_ids] - mean_OOD) / std_OOD * std_ID + mean_ID
+
+        # for evaluate mode
+        if self.do_eval:
+            print("######################\nEval mode detected!\n######################")
+            results = self.eval_model(
+                    eval_dataloader,
+                    verbose=True,
+                    silent=args.evaluate_during_training_silent,
+                    **kwargs,
+                )
+
+            # training_progress_scores["global_step"].append(global_step)
+            # training_progress_scores["epoch"].append(epoch_number)
+            # training_progress_scores["train_loss"].append(current_epoch_losses[0].cpu().item())
+            # for key in results:
+            #     training_progress_scores[f"eval_loss-{key}"].append(results[key][0])
+            #     training_progress_scores[f"eval_acc-{key}"].append(results[key][1])
+            # report = pd.DataFrame(training_progress_scores)
+            # print()
+            # report.to_csv(
+            #     os.path.join(output_dir, "training_progress_scores.csv"),
+            #     index=False,
+            # )
+            for key in results:
+                wandb.log(
+                            {
+                                f"eval_loss/{key}": results[key][0],
+                                f"eval_accuracy/{key}": results[key][1]
+                            }
+                        )
+            assert  False
 
         for current_epoch in train_iterator:
 
