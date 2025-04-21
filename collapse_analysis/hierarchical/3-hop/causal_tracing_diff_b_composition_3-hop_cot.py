@@ -8,9 +8,11 @@ import numpy as np
 from transformers import GPT2LMHeadModel, GPT2Tokenizer
 import json
 
+
 def setup_logging(debug_mode):
     level = logging.DEBUG if debug_mode else logging.INFO
     logging.basicConfig(level=level, format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 def return_rank(hd, word_embedding_, token_ids_list, metric='dot'):
     if metric == 'dot':
@@ -165,9 +167,12 @@ def intervene_and_measure(original_data,
     # 각 entry의 target_text는 [h1, r1, h3, h4, t] 형태라고 가정
     for bridge_entity, entries in original_data.items():
         for entry in entries:
+            if entry['identified_target'] != bridge_entity:
+                continue
+
             original_input = entry['input_text']
             tokens = parse_tokens(entry['target_text'])
-            assert len(tokens)== 5
+            assert len(tokens) == 5
             t1, t2, t3, t4, t = tokens
 
             # atomic_idx에 따라 후보 선택 로직 분기

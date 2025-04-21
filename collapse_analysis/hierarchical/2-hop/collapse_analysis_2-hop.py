@@ -126,41 +126,6 @@ def load_and_preprocess_data(f1_dict, f2_dict, test_path, idx):
     return grouped_id_train_data, grouped_id_test_data, grouped_ood_test_data
 
 
-# def get_hidden_states(model, input_text, layer_pos_pairs, tokenizer, device):
-#     inputs = tokenizer(input_text, return_tensors="pt").to(device)
-    
-#     with torch.no_grad():
-#         outputs = model(**inputs, output_hidden_states=True)
-#     all_hidden_states = outputs["hidden_states"]
-    
-#     hidden_states = []
-#     for layer, pos in layer_pos_pairs:
-#         try:
-#             post_block = all_hidden_states[layer]
-#             if len(post_block.shape) == 3:
-#                 post_block = post_block[0, pos, :].detach().cpu().numpy()
-#             elif len(post_block.shape) == 2:
-#                 post_block = post_block[pos, :].detach().cpu().numpy()
-#             else:
-#                 logging.warning(f"Unexpected shape for residual stream output: {post_block.shape}")
-#                 post_block = None
-
-#             hidden_states.append({
-#                 'layer': layer,
-#                 'position': pos,
-#                 'post_attention': None,
-#                 'post_mlp': post_block.tolist() if post_block is not None else None
-#             })
-#         except Exception as e:
-#             logging.error(f"Error processing layer {layer}, position {pos}: {str(e)}")
-#             hidden_states.append({
-#                 'layer': layer,
-#                 'position': pos,
-#                 'error': str(e)
-#             })
-#     return hidden_states
-
-
 ###############################################################################
 # Batch Processing Functions
 ###############################################################################
@@ -420,8 +385,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ckpt", required=True, help="Path to the model checkpoint")
     parser.add_argument("--layer_pos_pairs", required=True, help="List of (layer, position) tuples to evaluate")
+    parser.add_argument("--base_dir", default=None, help="base directory for dataset")
     parser.add_argument("--save_dir", required=True, help="Directory to save the analysis results")
-    parser.add_argument("--device", default="cuda:0", help="Device to run the model on")
+    parser.add_argument("--device", type=str, default="cuda", help="Device to run the model on")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode for verbose output")
     parser.add_argument("--atomic_idx", required=True, type=int, choices=[1,2], help="Bottleneck function index among f1, f2, and f3 used for collapse evaluation")
     parser.add_argument("--mode", required=True, help="Mode: 'post_mlp' or 'residual'")
@@ -432,12 +398,20 @@ def main():
 
     setup_logging(args.debug)
 
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    if args.base_dir:
+        assert os.path.isdir(args.base_dir)
+        base_dir = args.base_dir
+    else:
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+    logging.debug(f"base_dir: {base_dir}")
 
     if args.ckpt.split("/")[-1] == "":
         dataset, step = args.ckpt.split("/")[-3].split("_")[0], "final_checkpoint" if args.ckpt.split("/")[-2] == "final_checkpoint" else args.ckpt.split("/")[-2].split("-")[-1]
     else:
         dataset, step = args.ckpt.split("/")[-2].split("_")[0], "final_checkpoint" if args.ckpt.split("/")[-1] == "final_checkpoint" else args.ckpt.split("/")[-1].split("-")[-1]
+    
+    logging.debug(f"dataset: {dataset}\nstep: {step}")
     
     logging.info("Loading model and tokenizer...")
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
@@ -455,7 +429,7 @@ def main():
     atomic_file_2 = os.path.join(data_dir, f"atomic_facts_f2.json")
     # (t_N1, t_N2) -> t_N3
     f1_dict, f2_dict = load_atomic_facts_2hop(atomic_file_1, atomic_file_2)
-    
+
     grouped_id_train_data, grouped_id_test_data, grouped_ood_test_data = load_and_preprocess_data(
         f1_dict, f2_dict, os.path.join(data_dir, "test.json"), idx=args.atomic_idx
     )

@@ -35,8 +35,9 @@ process_model() {
                 for STEP in $(get_steps "$MODEL_DIR" "$CONFIG_FILE")
                 do
                     CHECKPOINT_DIR="/mnt/nas/hoyeon/GrokkedTransformer/trained_checkpoints/${MODEL_DIR}/checkpoint-${STEP}"
-                    CUDA_VISIBLE_DEVICES=2 python ../collapse_analysis.py \
+                    CUDA_VISIBLE_DEVICES=2 python ../collapse_analysis_2-hop.py \
                         --ckpt ${CHECKPOINT_DIR}/ \
+                        --base_dir /mnt/sda/hoyeon/GrokkedTransformer \
                         --layer_pos_pairs "[(${LAYER},${POS})]" \
                         --save_dir /mnt/nas/jinho/GrokkedTransformer/collapse_analysis/2-hop/ \
                         --atomic_idx ${ATOMIC_IDX} \
@@ -45,8 +46,9 @@ process_model() {
 
                 if [ "$(get_include_final "$MODEL_DIR" "$CONFIG_FILE")" = "true" ]; then
                     CHECKPOINT_DIR="/mnt/nas/hoyeon/GrokkedTransformer/trained_checkpoints/${MODEL_DIR}/final_checkpoint"
-                    CUDA_VISIBLE_DEVICES=2 python ../collapse_analysis.py \
+                    CUDA_VISIBLE_DEVICES=2 python ../collapse_analysis_2-hop.py \
                         --ckpt ${CHECKPOINT_DIR}/ \
+                        --base_dir /mnt/sda/hoyeon/GrokkedTransformer \
                         --layer_pos_pairs "[(${LAYER},${POS})]" \
                         --save_dir /mnt/nas/jinho/GrokkedTransformer/collapse_analysis/2-hop/ \
                         --atomic_idx ${ATOMIC_IDX} \

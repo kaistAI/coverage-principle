@@ -5,10 +5,11 @@ set -e
 
 # 현재 스크립트의 디렉토리 경로
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PARENT_DIR="$(dirname "$SCRIPT_DIR")"
+PARENT_DIR="$(dirname "$(dirname "$(dirname "$SCRIPT_DIR")")")"
 
 MODE=residual
-CONFIG_FILES=("analysis_list_paper.json" "analysis_list_cot_paper.json")
+# CONFIG_FILES=("analysis_list_paper.json" "analysis_list_cot_paper.json")
+CONFIG_FILES=("analysis_list_paper.json")
 
 # JSON 파일을 읽어서 jq로 파싱하는 함수
 get_steps() {
@@ -66,7 +67,7 @@ process_model() {
                         --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/ood_dedup.json" \
                         --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/step${STEP}" \
                         --save_plots \
-                        --reduce_method tsne \
+                        --reduce_method pca \
                         --pca_scope global \
                         --pca_n 5 &
                 done
@@ -83,7 +84,7 @@ process_model() {
                         --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/ood_dedup.json" \
                         --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/stepfinal_checkpoint" \
                         --save_plots \
-                        --reduce_method tsne \
+                        --reduce_method pca \
                         --pca_scope global \
                         --pca_n 5 &
                 fi
