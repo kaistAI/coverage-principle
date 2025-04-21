@@ -129,99 +129,6 @@ def group_data_by_b1_b2(examples, f1_dict, f2_dict):
     return dict(group_dict)
 
 
-###############################################################################
-# 3) Deduplication and Hooking Logic (Improved Deduplication)
-###############################################################################
-# def deduplicate_vectors(results):
-#     """
-#     Deduplicate vectors within each target group and track removal statistics.
-#     Improvement: Quantize each hidden state vector (by rounding to a fixed precision)
-#     to a hashable tuple and use set membership for fast duplicate checks.
-#     """
-#     import numpy as np
-#     from collections import defaultdict
-    
-#     dedup_stats = defaultdict(lambda: defaultdict(int))
-#     deduplicated_results = defaultdict(list)
-    
-#     # 확인 필요 : 이렇게 해서 결과가 달라지진 않을까?
-#     def quantize_vector(vec, precision=7):
-#         # Round each element in the vector to the specified precision and convert to tuple
-#         return tuple(round(x, precision) for x in vec)
-    
-#     def get_vector_key(hidden_state, precision=7):
-#         """
-#         Create a combined hashable key for a hidden state by quantizing available vectors
-#         (e.g., embedding, post_attention, post_mlp) and combining them into one tuple.
-#         """
-#         keys = []
-#         if 'embedding' in hidden_state:
-#             keys.append(quantize_vector(hidden_state['embedding'], precision))
-#         if 'post_attention' in hidden_state and hidden_state['post_attention'] is not None:
-#             keys.append(quantize_vector(hidden_state['post_attention'], precision))
-#         if 'post_mlp' in hidden_state and hidden_state['post_mlp'] is not None:
-#             keys.append(quantize_vector(hidden_state['post_mlp'], precision))
-#         return tuple(keys)
-    
-#     for target, instances in results.items():
-#         seen_vectors = defaultdict(set)  # (layer, pos) -> set of vector keys
-#         logging.info(f"Performing deduplication for target {target}")
-#         if target == 'unknown':
-#             continue
-        
-#         for instance in instances:
-#             is_duplicate = False
-#             for hidden_state in instance['hidden_states']:
-#                 layer = hidden_state['layer']
-#                 pos = hidden_state['position']
-#                 vector_key = get_vector_key(hidden_state)
-#                 if vector_key in seen_vectors[(layer, pos)]:
-#                     dedup_stats[target][f"layer{layer}_pos{pos}"] += 1
-#                     is_duplicate = True
-#                     break
-#                 else:
-#                     seen_vectors[(layer, pos)].add(vector_key)
-#             if not is_duplicate:
-#                 deduplicated_results[target].append(instance)
-    
-#     final_stats = {k: dict(v) for k, v in dedup_stats.items()}
-#     return dict(deduplicated_results), final_stats
-
-
-def deduplicate_grouped_data(grouped_data, atomic_idx):
-    """
-    grouped_data: 그룹핑된 데이터. 형식은 { group_key: [entry, entry, ...] }이며,
-                  각 entry는 "input_text"와 "target_text"를 포함하는 dict입니다.
-    atomic_idx: deduplication 기준을 결정하는 인덱스
-                - 1이면, target_text의 처음 두 토큰(t1, t2) 기준 deduplication
-                - 2이면, 처음 세 토큰(t1, t2, t3) 기준 deduplication
-                - 3이면, 처음 네 토큰(t1, t2, t3, t4) 기준 deduplication
-
-    Returns:
-        중복 제거된 entry들의 리스트. 동일한 deduplication 키를 가진 entry들은 하나만 남게 됩니다.
-    """
-    output = {}
-    for group_key, entries in grouped_data.items():
-        deduped = {}
-        for entry in entries:
-            tokens = parse_tokens(entry["target_text"])
-            if atomic_idx == 1:
-                dedup_key = tuple(tokens[:2])  # (t1, t2)
-            elif atomic_idx == 2 or atomic_idx == 4 or atomic_idx == 5:
-                dedup_key = tuple(tokens[:3])  # (t1, t2, t3)
-            elif atomic_idx == 3:
-                dedup_key = tuple(tokens[:4])  # (t1, t2, t3, t4)
-            else:
-                raise ValueError("atomic_idx must be 1, 2, or 3")
-
-            if dedup_key not in deduped:
-                deduped[dedup_key] = entry
-        output[group_key] = list(deduped.values())
-
-    return output
-
-
-
 def load_and_preprocess_data(f1_dict, f2_dict, f3_dict, test_path, idx):
     """
     Parse test.json, filter examples by type, and group them using atomic facts
@@ -263,12 +170,10 @@ def load_and_preprocess_data(f1_dict, f2_dict, f3_dict, test_path, idx):
         grouped_id_train_data = group_data_by_b1(id_train_data, f1_dict)
         grouped_id_test_data = group_data_by_b1(id_test_data, f1_dict)
         grouped_ood_test_data = group_data_by_b1(ood_test_data, f1_dict)
-    
     elif idx == 2:
         grouped_id_train_data = group_data_by_b2(id_train_data, f1_dict, f2_dict)
         grouped_id_test_data = group_data_by_b2(id_test_data, f1_dict, f2_dict)
         grouped_ood_test_data = group_data_by_b2(ood_test_data, f1_dict, f2_dict)
-        
     elif idx == 3:
         grouped_id_train_data = group_data_by_t_final(id_train_data, f1_dict, f2_dict, f3_dict)
         grouped_id_test_data = group_data_by_t_final(id_test_data, f1_dict, f2_dict, f3_dict)
@@ -412,6 +317,7 @@ def get_hidden_states_mlp(model, input_texts, layer_pos_pairs, tokenizer, device
         batch_hidden_states.append(instance_hidden_states)
     return batch_hidden_states
 
+
 def process_data_group(model, data_group, layer_pos_pairs, tokenizer, device, mode, batch_size=8):
     """
     For each group (bridge entity), processes examples in batches of size 'batch_size'
@@ -438,18 +344,105 @@ def process_data_group(model, data_group, layer_pos_pairs, tokenizer, device, mo
     return results
 
 
+# def deduplicate_vectors(results):
+#     """
+#     Deduplicate vectors within each target group and track removal statistics.
+#     Improvement: Quantize each hidden state vector (by rounding to a fixed precision)
+#     to a hashable tuple and use set membership for fast duplicate checks.
+#     """
+#     import numpy as np
+#     from collections import defaultdict
 
-###############################################################################
-# Main Function with Batch Processing and Improved Deduplication
-###############################################################################
+#     dedup_stats = defaultdict(lambda: defaultdict(int))
+#     deduplicated_results = defaultdict(list)
+
+#     def vectors_equal(v1, v2):
+#         """Compare two vectors for equality with numerical tolerance."""
+#         if v1 is None or v2 is None:
+#             return v1 is None and v2 is None
+#         return np.allclose(np.array(v1), np.array(v2), rtol=1e-5, atol=1e-8)
+
+#     def get_vector_key(hidden_state, precision=7):
+#         """
+#         Create a combined hashable key for a hidden state by quantizing available vectors
+#         (e.g., embedding, post_attention, post_mlp) and combining them into one tuple.
+#         """
+#         keys = []
+#         if 'embedding' in hidden_state:
+#             keys.append(quantize_vector(hidden_state['embedding'], precision))
+#         if 'post_attention' in hidden_state and hidden_state['post_attention'] is not None:
+#             keys.append(quantize_vector(hidden_state['post_attention'], precision))
+#         if 'post_mlp' in hidden_state and hidden_state['post_mlp'] is not None:
+#             keys.append(quantize_vector(hidden_state['post_mlp'], precision))
+#         return tuple(keys)
+    
+#     for target, instances in results.items():
+#         seen_vectors = defaultdict(set)  # (layer, pos) -> set of vector keys
+#         logging.info(f"Performing deduplication for target {target}")
+#         if target == 'unknown':
+#             continue
+        
+#         for instance in instances:
+#             is_duplicate = False
+#             for hidden_state in instance['hidden_states']:
+#                 layer = hidden_state['layer']
+#                 pos = hidden_state['position']
+#                 vector_key = get_vector_key(hidden_state)
+#                 if vector_key in seen_vectors[(layer, pos)]:
+#                     dedup_stats[target][f"layer{layer}_pos{pos}"] += 1
+#                     is_duplicate = True
+#                     break
+#                 else:
+#                     seen_vectors[(layer, pos)].add(vector_key)
+#             if not is_duplicate:
+#                 deduplicated_results[target].append(instance)
+    
+#     final_stats = {k: dict(v) for k, v in dedup_stats.items()}
+#     return dict(deduplicated_results), final_stats
+
+
+def deduplicate_grouped_data(grouped_data, atomic_idx):
+    """
+    grouped_data: 그룹핑된 데이터. 형식은 { group_key: [entry, entry, ...] }이며,
+                  각 entry는 "input_text"와 "target_text"를 포함하는 dict입니다.
+    atomic_idx: deduplication 기준을 결정하는 인덱스
+                - 1이면, target_text의 처음 두 토큰(t1, t2) 기준 deduplication
+                - 2이면, 처음 세 토큰(t1, t2, t3) 기준 deduplication
+                - 3이면, 처음 네 토큰(t1, t2, t3, t4) 기준 deduplication
+
+    Returns:
+        중복 제거된 entry들의 리스트. 동일한 deduplication 키를 가진 entry들은 하나만 남게 됩니다.
+    """
+    output = {}
+    for group_key, entries in grouped_data.items():
+        deduped = {}
+        for entry in entries:
+            tokens = parse_tokens(entry["target_text"])
+            if atomic_idx == 1:
+                dedup_key = tuple(tokens[:2])  # (t1, t2)
+            elif atomic_idx == 2 or atomic_idx == 4 or atomic_idx == 5:
+                dedup_key = tuple(tokens[:3])  # (t1, t2, t3)
+            elif atomic_idx == 3:
+                dedup_key = tuple(tokens[:4])  # (t1, t2, t3, t4)
+            else:
+                raise ValueError("atomic_idx must be 1, 2, or 3")
+
+            if dedup_key not in deduped:
+                deduped[dedup_key] = entry
+        output[group_key] = list(deduped.values())
+
+    return output
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ckpt", required=True, help="Model checkpoint path")
-    parser.add_argument("--layer_pos_pairs", required=True, help="(layer, position) tuples")
-    parser.add_argument("--save_dir", required=True, help="Directory to store analysis results")
-    parser.add_argument("--device", type=str, default="cuda:0")
-    parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--atomic_idx", required=True, type=int, help="Bottleneck function index among f1, f2, and f3 used for collapse evaluation")
+    parser.add_argument("--ckpt", required=True, help="Path to the model checkpoint")
+    parser.add_argument("--layer_pos_pairs", required=True, help="List of (layer, position) tuples to evaluate")
+    parser.add_argument("--data_dir", default=None, help="directory for dataset")
+    parser.add_argument("--save_dir", required=True, help="Directory to save the analysis results")
+    parser.add_argument("--device", type=str, default="cuda", help="Device to run the model on")
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode for verbose output")
+    parser.add_argument("--atomic_idx", required=True, type=int, choices=[1,2,3], help="Bottleneck function index among f1, f2, and f3 used for collapse evaluation")
     parser.add_argument("--mode", required=True, help="Mode: 'post_mlp' or 'residual'")
     parser.add_argument("--batch_size", type=int, default=4096, help="Batch size for processing")
     
@@ -460,29 +453,39 @@ def main():
 
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+    if args.data_dir:
+        assert os.path.isdir(args.data_dir)
+        data_dir = args.data_dir
+    else:
+        data_dir = base_dir
+
+    logging.debug(f"base_dir: {base_dir}")
+    logging.debug(f"data_dir: {data_dir}")
+
     if args.ckpt.split("/")[-1] == "":
         dataset, step = args.ckpt.split("/")[-3].split("_")[0], "final_checkpoint" if args.ckpt.split("/")[-2] == "final_checkpoint" else args.ckpt.split("/")[-2].split("-")[-1]
     else:
         dataset, step = args.ckpt.split("/")[-2].split("_")[0], "final_checkpoint" if args.ckpt.split("/")[-1] == "final_checkpoint" else args.ckpt.split("/")[-1].split("-")[-1]
     
+    logging.debug(f"dataset: {dataset}\nstep: {step}")
+    
     logging.info("Loading model and tokenizer...")
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
-    model = GPT2LMHeadModel.from_pretrained(os.path.join(base_dir, args.ckpt)).to(device)
+    model = GPT2LMHeadModel.from_pretrained(args.ckpt).to(device)
     model.eval()
-    tokenizer = GPT2Tokenizer.from_pretrained(os.path.join(base_dir, args.ckpt))
+    tokenizer = GPT2Tokenizer.from_pretrained(args.ckpt)
     tokenizer.padding_side = "left"
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.pad_token_id = tokenizer.eos_token_id
     model.config.pad_token_id = model.config.eos_token_id
     logging.info("Model and tokenizer loaded successfully")
     
-    data_dir = os.path.join(base_dir, "data", dataset)
+    data_dir = os.path.join(data_dir, "data", dataset)
     atomic_file_1 = os.path.join(data_dir, f"atomic_facts_f1.json")
     atomic_file_2 = os.path.join(data_dir, f"atomic_facts_f2.json")
     atomic_file_3 = os.path.join(data_dir, f"atomic_facts_f3.json")
-    # (t_N1, t_N2) -> t_N3
     f1_dict, f2_dict, f3_dict = load_atomic_facts_3hop(atomic_file_1, atomic_file_2, atomic_file_3)
-    
+
     grouped_id_train_data, grouped_id_test_data, grouped_ood_test_data = load_and_preprocess_data(
         f1_dict, f2_dict, f3_dict, os.path.join(data_dir, "test.json"), idx=args.atomic_idx
     )
@@ -544,7 +547,6 @@ def main():
     else:
         os.makedirs(save_dir, exist_ok=True)
 
-
     id_train_save = os.path.join(save_dir, "id_train_dedup.json")
     with open(id_train_save, "w") as f:
         json.dump(id_train_dedup, f)
@@ -571,7 +573,7 @@ def main():
     # ood_stats_path = os.path.join(save_dir, "dedup_stats_ood.json")
     # with open(ood_stats_path, "w") as f:
     #     json.dump(ood_stats, f)
-    
+
     logging.info("Finished all. Final deduplication stats:")
     logging.info(f"ID train: {len(id_train_dedup)} groups, ID test: {len(id_test_dedup)} groups, OOD: {len(ood_dedup)} groups")
     logging.info("Done.")

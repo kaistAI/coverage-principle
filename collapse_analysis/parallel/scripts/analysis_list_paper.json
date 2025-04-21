@@ -1,0 +1,6 @@
+{
+    "parallel2hop.50.60000.diff-f123.inf_wd-0.1_layer-8_head-12_seed-42": {
+        "steps": [500],
+        "include_final": true
+    }
+} 

@@ -1,18 +1,22 @@
 {
-    "twohop.30.9000.diff-f12.inf_wd-0.1_layer-8_head-12_seed-42": {
-        "steps": [250],
+    "twohop.50.27000.diff-f12.inf_wd-0.1_layer-8_head-12_seed-42": {
+        "steps": [],
         "include_final": true
     },
     "twohop.70.50000.diff-f12.inf_wd-0.1_layer-8_head-12_seed-42": {
-        "steps": [500],
+        "steps": [750],
         "include_final": true
     },
     "twohop.100.100000.diff-f12.inf_wd-0.1_layer-8_head-12_seed-42": {
-        "steps": [750, 1750],
+        "steps": [1750],
         "include_final": false
     },
     "twohop.150.300000.diff-f12.inf_wd-0.1_layer-8_head-12_seed-42": {
-        "steps": [1000, 1500],
-        "include_final": false
+        "steps": [1250],
+        "include_final": true
+    },
+    "twohop.200.600000.diff-f12.inf_wd-0.1_layer-8_head-12_seed-42": {
+        "steps": [1750],
+        "include_final": true
     }
-} 
+}

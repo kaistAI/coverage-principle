@@ -5,10 +5,11 @@ set -e
 
 # 현재 스크립트의 디렉토리 경로
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PARENT_DIR="$(dirname "$SCRIPT_DIR")"
+PARENT_DIR="$(dirname "$(dirname "$(dirname "$SCRIPT_DIR")")")"
 
 MODE=residual
-CONFIG_FILES=("analysis_list_paper.json" "analysis_list_cot_paper.json")
+# CONFIG_FILES=("analysis_list_paper.json" "analysis_list_cot_paper.json")
+CONFIG_FILES=("analysis_list_paper.json")
 
 # JSON 파일을 읽어서 jq로 파싱하는 함수
 get_steps() {
@@ -44,6 +45,7 @@ process_model() {
         POS_RANGE=(1 2 3)
         ATOMIC_IDX_RANGE=(1 2)
     fi
+    
     DEDUP_DIR="/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/2-hop/${MODE}/${SHORT_MODEL_DIR}"
     DATASET="${SHORT_MODEL_DIR}"
     

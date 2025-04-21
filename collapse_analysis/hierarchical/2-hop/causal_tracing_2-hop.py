@@ -70,7 +70,6 @@ def build_seen_atomic_dicts(f1_dict, f2_dict, train_data):
     return seen_f1_dict, seen_f2_dict
 
 
-
 def group_by_target(data, f1_dict = None):
     """
     data: train.json (또는 test.json)의 entry 리스트. 각 entry는 "input_text"와 "target_text"를 가짐.
@@ -117,7 +116,7 @@ def intervene_and_measure(original_data,
     original_data: { bridge_entity: [entry, ...], ... }
     model: Trained Decoder-only Transformer
     tokenizer: Tokenizer
-    device: 실행 디바이스 (예: "cuda:0")
+    device: 실행 디바이스 (예: "cuda")
     batch_size: 미니배치 크기
     """
     results = []
@@ -271,43 +270,45 @@ def intervene_and_measure(original_data,
     return results
 
 
-def get_total_list_length(json_data):
-    total_length = 0
-    for key, value in json_data.items():
-        if isinstance(value, list):
-            total_length += len(value)
-    return total_length
-
-
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_dir", required=True, help="Path to the model checkpoint")
     parser.add_argument("--step_list", default=None, nargs="+", help="checkpoint's steps to check causal strength")
+    parser.add_argument("--data_dir", default=None, help="directory for dataset")
     parser.add_argument("--device", default="cuda", help="Device to run the model on")
     parser.add_argument("--batch_size", type=int, default=4096)
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    
     args = parser.parse_args()
     setup_logging(args.debug)
     
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    if args.data_dir:
+        data_dir = args.data_dir
+    else:
+        data_dir = base_dir
     
     if args.model_dir.split("/")[-1] == "":
         dataset = args.model_dir.split("/")[-2].split("_")[0]
     else:
         dataset = args.model_dir.split("/")[-1].split("_")[0]
 
+    logging.debug(f"base_dir: {base_dir}")
+    logging.debug(f"data_dir: {data_dir}")
+    logging.debug(f"dataset: {dataset}")
+    
     # atomic facts 불러오기
-    with open(os.path.join(base_dir, "data", dataset, "atomic_facts_f1.json"), "r") as f:
+    with open(os.path.join(data_dir, "data", dataset, "atomic_facts_f1.json"), "r") as f:
         atomic_facts_f1 = json.load(f)
-    with open(os.path.join(base_dir, "data", dataset, "atomic_facts_f2.json"), "r") as f:
+    with open(os.path.join(data_dir, "data", dataset, "atomic_facts_f2.json"), "r") as f:
         atomic_facts_f2 = json.load(f)
 
     # (inp_token1, inp_token2) -> out_token
     f1_dict, f2_dict = parse_atomic_fact(atomic_facts_f1, atomic_facts_f2)
     
     # Consisting only of atomic facts shown during training
-    with open(os.path.join(base_dir, "data", dataset, "train.json"), "r") as f:
+    with open(os.path.join(data_dir, "data", dataset, "train.json"), "r") as f:
         train_data = json.load(f)
     # (inp_token1, inp_token2) -> out_token
     seen_f1_dict, seen_f2_dict = build_seen_atomic_dicts(f1_dict, f2_dict, train_data)
@@ -318,7 +319,7 @@ def main():
     for (t1, t2), b1 in seen_f1_dict.items():
         seen_b1_to_t1t2.setdefault(b1, set()).add((t1, t2))
     
-    with open(os.path.join(base_dir, "data", dataset, "test.json"), "r") as f:
+    with open(os.path.join(data_dir, "data", dataset, "test.json"), "r") as f:
         test_data = json.load(f)
     
     test_id_data = [entry for entry in test_data if entry.get("type") == "type_0"]
@@ -348,7 +349,7 @@ def main():
     
     for checkpoint in all_checkpoints:
         result_ckpt = {}
-        logging.info(f"\nNow checkpoint {checkpoint}")
+        logging.info(f"Now checkpoint {checkpoint}")
         step = checkpoint.split("-")[-1]
         model_path = os.path.join(args.model_dir, checkpoint)
         model = GPT2LMHeadModel.from_pretrained(model_path).to(device)
