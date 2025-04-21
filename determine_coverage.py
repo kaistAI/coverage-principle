@@ -158,7 +158,7 @@ def compute_coverage(G: nx.Graph, train_triples: List[Tuple[int, int, int]]) -> 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data_dir", required=True)
-    ap.add_argument("--visualise", help=".html for interactive Plotly graph")
+    ap.add_argument("--visualise", action="store_true")
     ap.add_argument("--debug", action="store_true")
     ap.add_argument("--min_evidence", type=int, default=1,
                        help="minimum evidence for equivalence classes")
@@ -221,99 +221,105 @@ def main():
         json.dump(test, f, indent=2)
     logging.info("test_annotated.json written")
 
-    # ------------------------------------------------------------------
-    # 1.  keep only the triples we want to see
-    # ------------------------------------------------------------------
-    type0_triples = []
-    for it in test:
-        if it.get("type") == "type_0":
-            tr = parse(it["input_text"])
-            assert tr not in train_triples, f"duplicate found: {tr!r}"
-            type0_triples.append(tr)
+    if args.visualise:
+        # ------------------------------------------------------------------
+        # 1.  keep only the triples we want to see
+        # ------------------------------------------------------------------
+        type0_triples = []
+        for it in test:
+            if it.get("type") == "type_0":
+                tr = parse(it["input_text"])
+                assert tr not in train_triples, f"duplicate found: {tr!r}"
+                type0_triples.append(tr)
 
-    train_set  = set(train_triples)
-    type0_set  = set(type0_triples)
+        train_set  = set(train_triples)
+        type0_set  = set(type0_triples)
 
-    # ------------------------------------------------------------------
-    # 2.  build a *visualisation* graph on this subset ------------------
-    #     (equivalence classes still come only from training pairs!)
-    # ------------------------------------------------------------------
-    viz_triples = train_triples + type0_triples
-    G_viz       = build_subst_graph(viz_triples, triple2t, uf)
+        # ------------------------------------------------------------------
+        # 2.  build a *visualisation* graph on this subset ------------------
+        #     (equivalence classes still come only from training pairs!)
+        # ------------------------------------------------------------------
+        viz_triples = train_triples + type0_triples
+        G_viz       = build_subst_graph(viz_triples, triple2t, uf)
 
-    # ------------------------------------------------------------------
-    # 3.  colour & shape buckets  ---------------------------------------
-    # ------------------------------------------------------------------
-    import plotly.graph_objects as go
-    logging.info("Writing Plotly graph → %s", args.visualise)
+        # ------------------------------------------------------------------
+        # 3.  colour & shape buckets  ---------------------------------------
+        # ------------------------------------------------------------------
+        import plotly.graph_objects as go
+        
+        if not os.path.exists('coverage_visualization'):
+            os.makedirs('coverage_visualization', exist_ok=True)
+        plot_save_dir = os.path.join('coverage_visualization', f"{args.data_dir.split('/')[-1]}_min{args.min_evidence}.html")
+            
+        logging.info("Writing Plotly graph → %s", plot_save_dir)
 
-    pos = nx.spring_layout(G_viz, seed=0)
+        pos = nx.spring_layout(G_viz, seed=0)
 
-    buckets = {                 # label → 3 empty lists (x,y,text)
-        "train (covered)"       : ([], [], []),
-        "type_0 ✓ covered"      : ([], [], []),
-        "type_0 ✗ uncovered"    : ([], [], []),
-    }
+        buckets = {                 # label → 3 empty lists (x,y,text)
+            "train (covered)"       : ([], [], []),
+            "type_0 ✓ covered"      : ([], [], []),
+            "type_0 ✗ uncovered"    : ([], [], []),
+        }
 
-    for n in G_viz.nodes():
-        x, y = pos[n]
-        txt  = str((*n, triple2t[n]))
+        for n in G_viz.nodes():
+            x, y = pos[n]
+            txt  = str((*n, triple2t[n]))
 
-        if n in train_set:
-            label = "train (covered)"
-        elif n in type0_set:  # Change this to be more specific about type_0
-            if n in covered:
-                label = "type_0 ✓ covered"
+            if n in train_set:
+                label = "train (covered)"
+            elif n in type0_set:  # Change this to be more specific about type_0
+                if n in covered:
+                    label = "type_0 ✓ covered"
+                else:
+                    label = "type_0 ✗ uncovered"
             else:
-                label = "type_0 ✗ uncovered"
-        else:
-            continue  # Skip other node types
+                continue  # Skip other node types
 
-        buckets[label][0].append(x)
-        buckets[label][1].append(y)
-        buckets[label][2].append(txt)
+            buckets[label][0].append(x)
+            buckets[label][1].append(y)
+            buckets[label][2].append(txt)
 
-    STYLE = {
-        "train (covered)"    : dict(symbol="diamond", size=8, color="#1f77b4"),
-        "type_0 ✓ covered"   : dict(symbol="circle",  size=7, color="#2ca02c"),
-        "type_0 ✗ uncovered" : dict(symbol="x",       size=8, color="#d62728"),
-    }
-    node_traces = [
-        go.Scatter(
-            x=xs, y=ys,
-            mode="markers",
-            name=label,
-            marker=STYLE[label],
-            text=texts,
-            hovertemplate="%{text}",
+        STYLE = {
+            "train (covered)"    : dict(symbol="diamond", size=8, color="#1f77b4"),
+            "type_0 ✓ covered"   : dict(symbol="circle",  size=7, color="#2ca02c"),
+            "type_0 ✗ uncovered" : dict(symbol="x",       size=8, color="#d62728"),
+        }
+        node_traces = [
+            go.Scatter(
+                x=xs, y=ys,
+                mode="markers",
+                name=label,
+                marker=STYLE[label],
+                text=texts,
+                hovertemplate="%{text}",
+            )
+            for label, (xs, ys, texts) in buckets.items()
+        ]
+
+        # light grey background edges
+        edge_x, edge_y = [], []
+        for u, v in G_viz.edges():
+            x0, y0 = pos[u];  x1, y1 = pos[v]
+            edge_x += [x0, x1, None];  edge_y += [y0, y1, None]
+        edge_trace = go.Scatter(
+            x=edge_x, y=edge_y,
+            mode="lines",
+            line=dict(width=0.4, color="#bbbbbb"),
+            hoverinfo="skip",
+            showlegend=False,
         )
-        for label, (xs, ys, texts) in buckets.items()
-    ]
 
-    # light grey background edges
-    edge_x, edge_y = [], []
-    for u, v in G_viz.edges():
-        x0, y0 = pos[u];  x1, y1 = pos[v]
-        edge_x += [x0, x1, None];  edge_y += [y0, y1, None]
-    edge_trace = go.Scatter(
-        x=edge_x, y=edge_y,
-        mode="lines",
-        line=dict(width=0.4, color="#bbbbbb"),
-        hoverinfo="skip",
-        showlegend=False,
-    )
-
-    fig = go.Figure(
-        data=[edge_trace] + node_traces,
-        layout=go.Layout(
-            title="Substitution Graph • hover shows (h1,h2,h3,t)",
-            hovermode="closest",
-            margin=dict(l=20, r=20, t=40, b=20),
-            xaxis=dict(visible=False), yaxis=dict(visible=False),
-        ),
-    )
-    fig.write_html(args.visualise)
-    logging.info("HTML saved → %s", args.visualise)
+        fig = go.Figure(
+            data=[edge_trace] + node_traces,
+            layout=go.Layout(
+                title="Substitution Graph • hover shows (h1,h2,h3,t)",
+                hovermode="closest",
+                margin=dict(l=20, r=20, t=40, b=20),
+                xaxis=dict(visible=False), yaxis=dict(visible=False),
+            ),
+        )
+        fig.write_html(plot_save_dir)
+        logging.info("HTML saved → %s", plot_save_dir)
 
 
 
