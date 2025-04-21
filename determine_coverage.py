@@ -227,20 +227,14 @@ def main():
     # 1.  keep only the triples we want to see
     # ------------------------------------------------------------------
     type0_triples = []
-    type3_triples = []  # Add this line
     for it in test:
         if it.get("type") == "type_0":
             tr = parse(it["input_text"])
             assert tr not in train_triples, f"duplicate found: {tr!r}"
             type0_triples.append(tr)
-        elif it.get("type") == "type_3":  # Add this block
-            tr = parse(it["input_text"])
-            assert tr not in train_triples, f"duplicate found: {tr!r}"
-            type3_triples.append(tr)
 
     train_set  = set(train_triples)
     type0_set  = set(type0_triples)
-    type3_set  = set(type3_triples)  # Add this line
 
     # ------------------------------------------------------------------
     # 2.  build a *visualisation* graph on this subset ------------------
@@ -261,8 +255,6 @@ def main():
         "train (covered)"       : ([], [], []),
         "type_0 ✓ covered"      : ([], [], []),
         "type_0 ✗ uncovered"    : ([], [], []),
-        "type_3 ✓ covered"      : ([], [], []),  # Add these two lines
-        "type_3 ✗ uncovered"    : ([], [], []),
     }
 
     for n in G_viz.nodes():
@@ -276,11 +268,6 @@ def main():
                 label = "type_0 ✓ covered"
             else:
                 label = "type_0 ✗ uncovered"
-        elif n in type3_set:  # Add this block for type_3
-            if n in covered:
-                label = "type_3 ✓ covered"
-            else:
-                label = "type_3 ✗ uncovered"
         else:
             continue  # Skip other node types
 
