@@ -211,8 +211,6 @@ def main():
         totals[typ] += 1
         if it["coverage"]:
             hits[typ] += 1
-        # if typ=="type_3" and it["coverage"]:
-        #     logging.info("type_3 coverage: %s", it["input_text"])
 
     for typ in sorted(totals):
         pct = 100.0 * hits[typ] / totals[typ]
@@ -240,7 +238,7 @@ def main():
     # 2.  build a *visualisation* graph on this subset ------------------
     #     (equivalence classes still come only from training pairs!)
     # ------------------------------------------------------------------
-    viz_triples = train_triples + type0_triples + type3_triples  # Add type3_triples
+    viz_triples = train_triples + type0_triples
     G_viz       = build_subst_graph(viz_triples, triple2t, uf)
 
     # ------------------------------------------------------------------
@@ -279,8 +277,6 @@ def main():
         "train (covered)"    : dict(symbol="diamond", size=8, color="#1f77b4"),
         "type_0 ✓ covered"   : dict(symbol="circle",  size=7, color="#2ca02c"),
         "type_0 ✗ uncovered" : dict(symbol="x",       size=8, color="#d62728"),
-        "type_3 ✓ covered"   : dict(symbol="star",    size=8, color="#9467bd"),  # Add these two lines
-        "type_3 ✗ uncovered" : dict(symbol="cross",   size=8, color="#ff7f0e"),  # with distinct markers
     }
     node_traces = [
         go.Scatter(
