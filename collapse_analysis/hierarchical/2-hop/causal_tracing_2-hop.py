@@ -266,6 +266,8 @@ def intervene_and_measure(original_data,
         # 불필요한 메모리 해제
         del query_hidden_states
         torch.cuda.empty_cache()
+        
+    assert len(results) == num_samples
 
     return results
 

@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 import plotly.express as px
+import os
 
 def load_data(file_path):
     print(f"\nLoading data from: {file_path}")
@@ -404,16 +405,30 @@ def main():
     
     args = parser.parse_args()
     
-    # Create output directory
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
     matches = re.findall(r"\((logit|prob|\d+),(\d+)\)", args.output_dir)
     assert len(matches) == 1, "Expected exactly one (layer, pos) pattern in output_dir name."
     target_layer = matches[0][0]
 
+    # Create output directory
+    output_dir = Path(args.output_dir)
+    if os.path.basename(args.id_test_file) == "id_test_dedup.json":
+        output_dir.mkdir(parents=True, exist_ok=True)
+    elif "id_test_covered_" in os.path.basename(args.id_test_file):
+        k_cutoff = os.path.basename(args.id_test_file).split("covered_")[1].split("_dedup.json")[0]
+        output_dir = output_dir / f"covered_{k_cutoff}"
+        output_dir.mkdir(parents=True, exist_ok=True)
+    elif os.path.basename(args.id_test_file) == "id_test_low_cutoff_dedup.json":
+        output_dir = output_dir / "low_cutoff"
+        output_dir.mkdir(parents=True, exist_ok=True)
+    elif os.path.basename(args.id_test_file) == "id_test_high_cutoff_dedup.json":
+        output_dir = output_dir / "high_cutoff"
+        output_dir.mkdir(parents=True, exist_ok=True)
     results_file_name = output_dir / f"similarity_metrics_layer{target_layer}.txt"
     metrics_json_file = output_dir / "metrics_results.json"
+    
+    if os.path.exists(results_file_name) and os.path.exists(metrics_json_file):
+        print(f"Results file {results_file_name} and metrics file {metrics_json_file} already exists!")
+        return
 
     # Load data
     id_train_data = load_data(args.id_train_file)

@@ -7,6 +7,7 @@ from tqdm import tqdm
 import numpy as np
 from transformers import GPT2LMHeadModel, GPT2Tokenizer
 import json
+from collections import defaultdict
 
 
 def setup_logging(debug_mode):
@@ -32,12 +33,12 @@ def return_rank(hd, word_embedding_, token_ids_list, metric='dot'):
 def parse_tokens(text):
     """
     주어진 문자열을 "<"와 ">"를 기준으로 분리하여 토큰 리스트를 생성합니다.
-    예: "<t_5><t_23><t_17><t_42><t_33></a>" -> ["t_5", "t_23", "t_17", "t_42", "t_33"]
+    예: "<t_5><t_23><t_17><t_42></a>" -> ["t_5", "t_23", "t_17", "t_42"]
     """
     tokens = text.replace("</a>", "").strip("><").split("><")
     return tokens
 
-def parse_atomic_fact(atomic_facts_f1, atomic_facts_f2, atomic_facts_f3):
+def parse_atomic_fact(atomic_facts_f1, atomic_facts_f2):
     
     def _func(atomic_facts):
         result = {}
@@ -50,66 +51,45 @@ def parse_atomic_fact(atomic_facts_f1, atomic_facts_f2, atomic_facts_f3):
 
     f1_dict = _func(atomic_facts_f1)
     f2_dict = _func(atomic_facts_f2)
-    f3_dict = _func(atomic_facts_f3)
     
-    return f1_dict, f2_dict, f3_dict
+    return f1_dict, f2_dict
 
 
-def build_seen_atomic_dicts(f1_dict, f2_dict, f3_dict, train_data):
+def build_seen_atomic_dicts(f1_dict, f2_dict, train_data):
     '''
     f1_dict : (inp_token1, inp_token2) -> out_token
     '''
-    seen_f1_dict, seen_f2_dict, seen_f3_dict = {}, {}, {}
+    seen_f1_dict, seen_f2_dict = {}, {}
     for data in train_data:
         tokens = parse_tokens(data["target_text"])
-        assert len(tokens) == 5
-        t1, t2, t3, t4, t = tokens
+        assert len(tokens) == 4
+        t1, t2, t3, t = tokens
         b1 = f1_dict[(t1, t2)]
         seen_f1_dict[(t1, t2)] = b1
-        b2 = f2_dict[(b1, t3)]
-        seen_f2_dict[(b1, t3)] = b2
-        assert f3_dict[(b2, t4)] == t
-        seen_f3_dict[(b2, t4)] = t
-    return seen_f1_dict, seen_f2_dict, seen_f3_dict
+        assert f2_dict[(b1, t3)] == t
+        seen_f2_dict[(b1, t3)] = t
+    return seen_f1_dict, seen_f2_dict
 
 
-# atomic_idx에 따라 grouping: 
-# - atomic_idx==1: group by f1 (identified_target = b1)
-# - atomic_idx==2: group by f2 (identified_target = b2)
-def group_by_target(data, atomic_idx, f1_dict = None, f2_dict = None):
+def group_by_target(data, f1_dict = None):
     """
     data: train.json (또는 test.json)의 entry 리스트. 각 entry는 "input_text"와 "target_text"를 가짐.
-    atomic_idx:
-    - 1이면 f1 기준 → 그룹키는 b1
-    - 2이면 f2 기준 → 그룹키는 b2
-    f1_dict : (inp_token1, inp_token2) -> b1
-    f2_dict : (b1, inp_token3) -> b2
+    f1_dict : (inp_token1, inp_token2) -> out_token
     """
     grouped = {}
     for entry in data:
         tokens = parse_tokens(entry["target_text"])
-        t1, t2, t3, _, t = tokens
-        if atomic_idx == 1:
-            assert f1_dict != None
-            key = f1_dict[(t1, t2)]
-        elif atomic_idx == 2:
-            # f2 기준: 먼저 b1을 구한 후, b2 = f2_dict[(b1, h3)]
-            assert f1_dict != None and f2_dict != None
-            b1 = f1_dict[(t1, t2)]
-            key = f2_dict[(b1, t3)]
-        else:
-            raise ValueError("atomic_idx must be 1 or 2")
+        t1, t2, t3, t = tokens
+        assert f1_dict != None
+        key = f1_dict[(t1, t2)]
         grouped.setdefault(key, []).append(entry)
     return grouped
 
 
-def deduplicate_grouped_data(grouped_data, atomic_idx):
+def deduplicate_grouped_data(grouped_data):
     """
     grouped_data: 그룹핑된 데이터. 형식은 { group_key: [entry, entry, ...] }이며,
                   각 entry는 "input_text"와 "target_text"를 포함하는 dict입니다.
-    atomic_idx: deduplication 기준을 결정하는 인덱스
-                - 1이면, target_text의 처음 두 토큰(t1, t2) 기준 deduplication
-                - 2이면, 처음 세 토큰(t1, t2, t3) 기준 deduplication
 
     Returns:
         중복 제거된 entry들의 리스트. 동일한 deduplication 키를 가진 entry들은 하나만 남게 됩니다.
@@ -119,12 +99,7 @@ def deduplicate_grouped_data(grouped_data, atomic_idx):
         deduped = {}
         for entry in entries:
             tokens = parse_tokens(entry["target_text"])
-            if atomic_idx == 1:
-                dedup_key = tuple(tokens[:2])  # (t1, t2)
-            elif atomic_idx == 2:
-                dedup_key = tuple(tokens[:3])  # (t1, t2, t3)
-            else:
-                raise ValueError("atomic_idx must be 1 or 2")
+            dedup_key = tuple(tokens[:2])  # (t1, t2)
 
             if dedup_key not in deduped:
                 deduped[dedup_key] = entry
@@ -132,28 +107,18 @@ def deduplicate_grouped_data(grouped_data, atomic_idx):
 
     return output
 
-
 def intervene_and_measure(original_data, 
                           model, 
                           tokenizer, 
-                          atomic_idx, 
-                          seen_b1_to_t1t2, 
-                          seen_f2_dict, 
-                          seen_f3_dict,
-                          extra_dict, 
+                          seen_b1_to_t1t2,
+                          seen_f2_dict,
                           device, 
                           batch_size=32):
     """
-    original_data: dict, 그룹화 기준은 atomic_idx에 따라 달라짐.
-      - atomic_idx==1: key는 f1의 출력(b1)
-      - atomic_idx==2: key는 f2의 출력(b2)
-    model, tokenizer, device: 모델 관련 객체
-    seen_b1_to_t1t2: b1 -> set((t1, t2), ...)
-    seen_f2_dict: (b1, t3) -> b2
-    seen_f3_dict: (b2, t4) -> t
-    extra_dict: 
-      - if atomic_idx==2: seen_b2_to_b1t3 (b2 -> set((b1, h3)) )
-      - if atomic_idx==1: None
+    original_data: { bridge_entity: [entry, ...], ... }
+    model: Trained Decoder-only Transformer
+    tokenizer: Tokenizer
+    device: 실행 디바이스 (예: "cuda")
     batch_size: 미니배치 크기
     """
     results = []
@@ -163,81 +128,47 @@ def intervene_and_measure(original_data,
     all_real_t = []
     all_changed_t = []
     all_query = []
+    all_injection_pos = []  # injection 위치를 저장할 리스트 추가
 
-    # 각 entry의 target_text는 [t1, t2, t3, t4, t] 형태라고 가정
+    # 각 entry의 target_text는 [t1, t2, t3, t] 형태라고 가정
     for bridge_entity, entries in original_data.items():
         for entry in entries:
             original_input = entry['input_text']
             tokens = parse_tokens(entry['target_text'])
-            assert len(tokens) == 5
-            t1, t2, t3, t4, t = tokens
+            assert len(tokens) == 4
+            t1, t2, t3, t = tokens
 
-            # atomic_idx에 따라 후보 선택 로직 분기
-            if atomic_idx == 1:
-                # f1 기반: bridge_entity = b1
-                candidate_set = set()
-                for b1_candidate in seen_b1_to_t1t2.keys():
-                    if b1_candidate == bridge_entity:
-                        continue
-                    # f2 mapping: (b1_candidate, t3) -> b2가 있어야 함
-                    if (b1_candidate, t3) not in seen_f2_dict:
-                        continue
-                    b2_candidate = seen_f2_dict[(b1_candidate, t3)]
-                    # f3 mapping: (b2_candidate, t4) -> candidate_t가 있어야 함
-                    if (b2_candidate, t4) not in seen_f3_dict:
-                        continue
-                    candidate_t = seen_f3_dict[(b2_candidate, t4)]
-                    if candidate_t != t:
-                        candidate_set.add((b1_candidate, candidate_t))
-                candidate_hr_set = set()
-                for b1_candidate, cand_t in candidate_set:
-                    for (t1_candidate, t2_candidate) in seen_b1_to_t1t2[b1_candidate]:
-                        if t1_candidate == t1 and t2_candidate != t2:
-                            candidate_hr_set.add((t1_candidate, t2_candidate, cand_t))
-                if len(candidate_hr_set) == 0:
-                    skipped_data += 1
+            # 후보 query 및 변경된 t 생성 (첫 번째 relation perturb)
+            candidate_set = set()
+            for b1_candidate in seen_b1_to_t1t2.keys():
+                if b1_candidate == bridge_entity:
                     continue
-                candidate_list = sorted(list(candidate_hr_set))
-                selected_candidate = candidate_list[np.random.randint(0, len(candidate_list))]
-                # query_text는 f1의 입력: "<t1><t2'>"
-                query_text = ''.join([f"<{token}>" for token in selected_candidate[:2]])
-                changed_t = selected_candidate[-1]
-                injection_pos = 1  # intervention 시, 두 번째 토큰 위치 교체
-
-            elif atomic_idx == 2:
-                # extra_dict(=seen_b2_to_b1t3) : b2 -> set((b1, h3))
-                candidate_set = set()
-                for b2_candidate in extra_dict.keys():
-                    if b2_candidate == bridge_entity:
-                        continue
-                    if (b2_candidate, t4) not in seen_f3_dict:
-                        continue
-                    candidate_t = seen_f3_dict[(b2_candidate, t4)]
-                    if candidate_t != t:
-                        candidate_set.add((b2_candidate, candidate_t))
-                candidate_input_set = set()
-                # 후보로 얻은 b2_candidate에서, extra_dict[b2_prime]는 set((b1, h3))
-                for b2_candidate, cand_t in candidate_set:
-                    for (b1_candidate, t3_candidate) in extra_dict[b2_candidate]:
-                        for (t1_candidate, t2_candidate) in seen_b1_to_t1t2[b1_candidate]:
-                            if t1_candidate == t1 and t2_candidate == t2 and t3_candidate != t3:
-                                candidate_input_set.add((t1_candidate, t2_candidate, t3_candidate, cand_t))
-                if len(candidate_input_set) == 0:
-                    skipped_data += 1
+                # f2 mapping: (b1_candidate, t3) -> t가 있어야 함
+                if (b1_candidate, t3) not in seen_f2_dict:
                     continue
-                candidate_list = sorted(list(candidate_input_set))
-                selected_candidate = candidate_list[np.random.randint(0, len(candidate_list))]
-                # query_text는 f2의 입력: "<t1><t2><t3>"
-                query_text = ''.join([f"<{token}>" for token in selected_candidate[:3]])
-                changed_t = selected_candidate[-1]
-                injection_pos = 2  # intervention 시, 세 번째 토큰 위치 교체
-            else:
-                raise ValueError("atomic_idx must be 1 or 2")
+                candidate_t = seen_f2_dict[(b1_candidate, t3)]
+                if candidate_t != t:
+                    candidate_set.add((b1_candidate, candidate_t))
+            candidate_hr_set = set()
+            for b1_candidate, cand_t in candidate_set:
+                for (t1_candidate, t2_candidate) in seen_b1_to_t1t2[b1_candidate]:
+                    if t1_candidate == t1 and t2_candidate != t2:
+                        candidate_hr_set.add((t1, t2_candidate, t3, cand_t))
+            if len(candidate_hr_set) == 0:
+                skipped_data += 1
+                continue
+            candidate_list = sorted(list(candidate_hr_set))
+            selected_candidate = candidate_list[np.random.randint(0, len(candidate_list))]
+            # query_text is perterbed input: "<t1><t2>'<t3>"
+            query_text = ''.join([f"<{token}>" for token in selected_candidate[:3]])
+            changed_t = selected_candidate[-1]
             
-            all_original_inputs.append(original_input)
-            all_real_t.append(t)
-            all_changed_t.append(changed_t)
-            all_query.append(query_text)
+            for injection_pos in range(3):  # 모든 입력 위치에 대해 injection
+                all_original_inputs.append(original_input)
+                all_real_t.append(t)
+                all_changed_t.append(changed_t)
+                all_query.append(query_text)
+                all_injection_pos.append(injection_pos)
     
     print(f"The number of data skipped because appropriate intervene data was not seen during training: {skipped_data}")
     if len(all_original_inputs) == 0:
@@ -251,6 +182,7 @@ def intervene_and_measure(original_data,
         current_real_t = all_real_t[start:end]
         current_changed_t = all_changed_t[start:end]
         current_query = all_query[start:end]
+        current_injection_pos = all_injection_pos[start:end]
 
         # 1. 원본 입력에 대한 모델 forward
         tokenizer_output = tokenizer(current_original_inputs, return_tensors="pt", padding=True)
@@ -294,12 +226,16 @@ def intervene_and_measure(original_data,
         del outputs_query
         torch.cuda.empty_cache()
 
-        # 3. intervention: injection할 토큰 위치는 injection_pos (atomic_idx별로 다름)
+        # 3. intervention: 각 샘플별로 지정된 injection_pos에 대해 수행
         intervened_ranks_real = {}
         intervened_ranks_changed = {}
         for layer_to_intervene in range(1, 8):
             hidden_states = original_hidden_states[layer_to_intervene].clone()
-            hidden_states[:, injection_pos, :] = query_hidden_states[layer_to_intervene][:, injection_pos, :]
+            
+            # 각 샘플별로 지정된 injection_pos에 대해 intervention 수행
+            for i, pos in enumerate(current_injection_pos):
+                hidden_states[i, pos, :] = query_hidden_states[layer_to_intervene][i, pos, :]
+            
             intervened_hidden = hidden_states
             for i in range(layer_to_intervene, 8):
                 f_layer = model.transformer.h[i]
@@ -329,6 +265,7 @@ def intervene_and_measure(original_data,
         # 4. 미니배치 내 각 샘플별 결과 dict 생성 및 결과 리스트에 저장
         for i in range(len(current_original_inputs)):
             result_dict = {}
+            result_dict["injection_pos"] = current_injection_pos[i]  # injection 위치 정보 추가
             result_dict["rank_before_real_t"] = rank_before_real[i]
             result_dict["rank_before_changed_t"] = rank_before_changed[i]
             for layer in range(1, 8):
@@ -344,7 +281,42 @@ def intervene_and_measure(original_data,
 
     return results
 
+def load_and_preprocess_data(f1_dict, test_data):
+    """
+    Parse test.json, filter examples by type, and group them using atomic facts
+    """
 
+    id_train_data = []
+    id_test_data = []
+    id_test_data_low_cutoff = []  # k < 3
+    id_test_data_high_cutoff = []  # k >= 3
+    ood_test_data = []
+    
+    for d in test_data:
+        if d['type'] == 'train_inferred':
+            id_train_data.append(d)
+        elif d['type'] == 'type_0':
+            id_test_data.append(d)
+        elif d['type'].startswith("covered_"):
+            n = int(d['type'].split("_")[-1])
+            if n < 3:
+                id_test_data_low_cutoff.append(d)
+            else:
+                id_test_data_high_cutoff.append(d)
+        elif d['type'] in ['type_1', 'type_2']:
+            ood_test_data.append(d)
+        elif d['type'] in ['type_3']:
+            pass
+        else:
+            raise NotImplementedError("Invalid coverage type")
+            
+    grouped_id_train_data = group_by_target(id_train_data, f1_dict)
+    grouped_id_test_data = group_by_target(id_test_data, f1_dict)
+    grouped_id_test_data_low_cutoff = group_by_target(id_test_data_low_cutoff, f1_dict)
+    grouped_id_test_data_high_cutoff = group_by_target(id_test_data_high_cutoff, f1_dict)
+    grouped_ood_test_data = group_by_target(ood_test_data, f1_dict)
+    
+    return grouped_id_train_data, grouped_id_test_data, grouped_id_test_data_low_cutoff, grouped_id_test_data_high_cutoff, grouped_ood_test_data
 
 def main():
     parser = argparse.ArgumentParser()
@@ -352,8 +324,6 @@ def main():
     parser.add_argument("--step_list", default=None, nargs="+", help="checkpoint's steps to check causal strength")
     parser.add_argument("--data_dir", default=None, help="directory for dataset")
     parser.add_argument("--device", default="cuda", help="Device to run the model on")
-    parser.add_argument("--atomic_idx", type=int, choices=[1, 2], required=True,
-                        help="기준 atomic index: 1이면 f1, 2이면 f2 기준 intervention")
     parser.add_argument("--batch_size", type=int, default=4096)
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     
@@ -380,52 +350,40 @@ def main():
         atomic_facts_f1 = json.load(f)
     with open(os.path.join(data_dir, "data", dataset, "atomic_facts_f2.json"), "r") as f:
         atomic_facts_f2 = json.load(f)
-    with open(os.path.join(data_dir, "data", dataset, "atomic_facts_f3.json"), "r") as f:
-        atomic_facts_f3 = json.load(f)
 
     # (inp_token1, inp_token2) -> out_token
-    f1_dict, f2_dict, f3_dict = parse_atomic_fact(atomic_facts_f1, atomic_facts_f2, atomic_facts_f3)
+    f1_dict, f2_dict = parse_atomic_fact(atomic_facts_f1, atomic_facts_f2)
     
     # Consisting only of atomic facts shown during training
     with open(os.path.join(data_dir, "data", dataset, "train.json"), "r") as f:
         train_data = json.load(f)
     # (inp_token1, inp_token2) -> out_token
-    seen_f1_dict, seen_f2_dict, seen_f3_dict = build_seen_atomic_dicts(f1_dict, f2_dict, f3_dict, train_data)
-    
+    seen_f1_dict, seen_f2_dict = build_seen_atomic_dicts(f1_dict, f2_dict, train_data)
+
     # for convenience
     # b1 -> set((t1, t2))
     seen_b1_to_t1t2 = {}
     for (t1, t2), b1 in seen_f1_dict.items():
         seen_b1_to_t1t2.setdefault(b1, set()).add((t1, t2))
     
-    # b2 -> set((b1, t3))
-    seen_b2_to_b1t3 = {}
-    for (b1, t3), b2 in seen_f2_dict.items():
-        seen_b2_to_b1t3.setdefault(b2, set()).add((b1, t3))
-    
-    with open(os.path.join(data_dir, "data", dataset, "test.json"), "r") as f:
+    with open(os.path.join(data_dir, "data", dataset, "test_annotated.json"), "r") as f:
         test_data = json.load(f)
     
-    test_id_data = [entry for entry in test_data if entry.get("type") == "type_0"]
-    # test_ood_data = [entry for entry in test_data if entry.get("type") != "type_0"]
-
-    if args.atomic_idx == 1:
-        original_train = group_by_target(train_data, atomic_idx=1, f1_dict=f1_dict)
-        original_test_id  = group_by_target(test_id_data, atomic_idx=1, f1_dict=f1_dict)
-        extra_dict = None  # f1-based는 별도 extra dict 필요 없음
-    elif args.atomic_idx == 2:
-        original_train = group_by_target(train_data, atomic_idx=2, f1_dict=f1_dict, f2_dict=f2_dict)
-        original_test_id  = group_by_target(test_id_data, atomic_idx=2, f1_dict=f1_dict, f2_dict=f2_dict)
-        extra_dict = seen_b2_to_b1t3  # f2-based: extra dict
+    grouped_id_train_data, grouped_id_test_data, grouped_id_test_data_low_cutoff, grouped_id_test_data_high_cutoff, grouped_ood_test_data = load_and_preprocess_data(
+        f1_dict, test_data
+    )
     
     # deduplicate data according to atomic_idx
-    original_train_dedup = deduplicate_grouped_data(original_train, args.atomic_idx)
-    original_test_id_dedup = deduplicate_grouped_data(original_test_id, args.atomic_idx)
+    original_train_dedup = deduplicate_grouped_data(grouped_id_train_data)
+    original_test_id_dedup = deduplicate_grouped_data(grouped_id_test_data)
+    original_test_id_low_cutoff_dedup = deduplicate_grouped_data(grouped_id_test_data_low_cutoff)
+    original_test_id_high_cutoff_dedup = deduplicate_grouped_data(grouped_id_test_data_high_cutoff)
+    # original_ood_test_dedup = deduplicate_grouped_data(grouped_ood_test_data)
 
     np.random.seed(0)
     torch.manual_seed(0)
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
-    
+
     all_checkpoints = [
         checkpoint_name for step in args.step_list
         for checkpoint_name in (["final_checkpoint"] if step == "final_checkpoint" else [f"checkpoint-{step}"])
@@ -450,34 +408,56 @@ def main():
         model.config.pad_token_id = model.config.eos_token_id
         model.eval()
         
-        print("Train data intervene exp...")
+        logging.info("Train data intervene exp...")
         train_results = intervene_and_measure(original_data=original_train_dedup, 
                                               model=model, 
                                               tokenizer=tokenizer, 
-                                              atomic_idx=args.atomic_idx,
                                               seen_b1_to_t1t2=seen_b1_to_t1t2, 
-                                              seen_f2_dict=seen_f2_dict, 
-                                              seen_f3_dict=seen_f3_dict,
-                                              extra_dict=extra_dict, 
+                                              seen_f2_dict=seen_f2_dict,
                                               device=device, 
                                               batch_size=args.batch_size)
-        print("test data intervene exp...")
+        logging.info("Test data intervene exp...")
         test_results = intervene_and_measure(original_data=original_test_id_dedup, 
-                                             model=model, 
-                                             tokenizer=tokenizer, 
-                                             atomic_idx=args.atomic_idx,
-                                             seen_b1_to_t1t2=seen_b1_to_t1t2, 
-                                             seen_f2_dict=seen_f2_dict, 
-                                             seen_f3_dict=seen_f3_dict,
-                                             extra_dict=extra_dict, 
-                                             device=device, 
-                                             batch_size=args.batch_size)
+                                              model=model, 
+                                              tokenizer=tokenizer, 
+                                              seen_b1_to_t1t2=seen_b1_to_t1t2, 
+                                              seen_f2_dict=seen_f2_dict,
+                                              device=device, 
+                                              batch_size=args.batch_size)
+        logging.info("Test data with low cutoff coverage intervene exp...")
+        test_low_cutoff_results = intervene_and_measure(original_data=original_test_id_low_cutoff_dedup, 
+                                              model=model, 
+                                              tokenizer=tokenizer, 
+                                              seen_b1_to_t1t2=seen_b1_to_t1t2, 
+                                              seen_f2_dict=seen_f2_dict,
+                                              device=device, 
+                                              batch_size=args.batch_size)
+        logging.info("Test data with high cutoff coverage intervene exp...")
+        test_high_cutoff_results = intervene_and_measure(original_data=original_test_id_high_cutoff_dedup, 
+                                              model=model, 
+                                              tokenizer=tokenizer, 
+                                              seen_b1_to_t1t2=seen_b1_to_t1t2, 
+                                              seen_f2_dict=seen_f2_dict,
+                                              device=device, 
+                                              batch_size=args.batch_size)
+        # logging.info("OOD test data intervene exp...")
+        # ood_test_results = intervene_and_measure(original_data=original_ood_test_dedup, 
+        #                                       model=model, 
+        #                                       tokenizer=tokenizer, 
+        #                                       seen_b1_to_t1t2=seen_b1_to_t1t2, 
+        #                                       seen_f2_dict=seen_f2_dict,
+        #                                       device=device, 
+        #                                       batch_size=args.batch_size)
+        
         result_ckpt["train_inferred"] = train_results
         result_ckpt["test_inferred"] = test_results
+        result_ckpt["test_inferred_low_cutoff"] = test_low_cutoff_results
+        result_ckpt["test_inferred_high_cutoff"] = test_high_cutoff_results
+        # result_ckpt["ood_test"] = ood_test_results
         results[checkpoint] = result_ckpt
     
-    save_file_name = f"{args.model_dir.split('/')[-1]}_residual_diff_f{args.atomic_idx}"
-    out_dir = os.path.join(base_dir, "collapse_analysis", "tracing_results", "3-hop")
+    save_file_name = f"{args.model_dir.split('/')[-1]}_residual_diff_f1"
+    out_dir = os.path.join(base_dir, "collapse_analysis", "tracing_results", "2-hop")
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, f"{save_file_name}.json"), "w", encoding='utf-8') as f:
         json.dump(results, f, indent=4)
@@ -491,36 +471,40 @@ def main():
     for checkpoint in all_ckpts:
         results_4_ckpt = {}
         for data_type, entries in results[checkpoint].items():
-            sample_num = 0
-            
-            result_4_type = dict()
-            for i in range(1,8):
-                result_4_type[f"real_t>changed_t_layer{i}"] = 0
-                result_4_type[f"rank(changed_t)<=5_layer{i}"] = 0
-                result_4_type[f"both_layer{i}"] = 0
-            
-            for entry in entries:
-                # 애초부터 실제 t가 changed t보다 낮은 경우는 제외 (intervene 방식의 의미가 없음)
-                if entry["rank_before_real_t"] > entry["rank_before_changed_t"]:
-                    continue
-                sample_num += 1
+            # 각 position별로 결과를 저장
+            results_by_pos = {0: {}, 1: {}, 2: {}}
+            for pos in range(3):
+                sample_num = 0
+                result_4_type = dict()
                 for i in range(1,8):
-                    if entry[f"rank_after_{i}_changed_t"] <= 5:
-                        result_4_type[f"rank(changed_t)<=5_layer{i}"] += 1
-                    if entry[f"rank_after_{i}_real_t"] > entry[f"rank_after_{i}_changed_t"]:
-                        result_4_type[f"real_t>changed_t_layer{i}"] += 1
+                    result_4_type[f"real_t>changed_t_layer{i}"] = 0
+                    result_4_type[f"rank(changed_t)<=5_layer{i}"] = 0
+                    result_4_type[f"both_layer{i}"] = 0
+                
+                # 해당 position의 entry만 필터링
+                pos_entries = [entry for entry in entries if entry["injection_pos"] == pos]
+                
+                for entry in pos_entries:
+                    if entry["rank_before_real_t"] > entry["rank_before_changed_t"]:
+                        continue
+                    sample_num += 1
+                    for i in range(1,8):
                         if entry[f"rank_after_{i}_changed_t"] <= 5:
-                            result_4_type[f"both_layer{i}"] += 1
+                            result_4_type[f"rank(changed_t)<=5_layer{i}"] += 1
+                        if entry[f"rank_after_{i}_real_t"] > entry[f"rank_after_{i}_changed_t"]:
+                            result_4_type[f"real_t>changed_t_layer{i}"] += 1
+                            if entry[f"rank_after_{i}_changed_t"] <= 5:
+                                result_4_type[f"both_layer{i}"] += 1
+                
+                result_4_type["sample_num"] = sample_num
+                result_4_type["passed_data_num"] = len(pos_entries) - sample_num
+                results_by_pos[pos] = result_4_type
             
-            result_4_type["sample_num"] = sample_num
-            result_4_type["passed_data_num"] = len(entries) - sample_num
-            results_4_ckpt[data_type] = result_4_type
+            results_4_ckpt[data_type] = results_by_pos
         refined_results[checkpoint] = results_4_ckpt
     
     with open(os.path.join(out_dir, f"{save_file_name}_refined.json"), "w", encoding='utf-8') as f:
         json.dump(refined_results, f, indent=4)
-
-
-
+        
 if __name__=="__main__":
     main()

@@ -8,7 +8,8 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PARENT_DIR="$(dirname "$(dirname "$(dirname "$SCRIPT_DIR")")")"
 
 MODE=residual
-CONFIG_FILES=("analysis_list_paper.json")
+# CONFIG_FILES=("analysis_list_paper.json" "analysis_list_cot_paper.json")
+CONFIG_FILES=("analysis_list_coverage.json")
 
 # JSON 파일을 읽어서 jq로 파싱하는 함수
 get_steps() {
@@ -36,14 +37,22 @@ process_model() {
     echo "Steps to analyze: $(get_steps "$MODEL_DIR" "$CONFIG_FILE")"
     echo "Include final checkpoint: $(get_include_final "$MODEL_DIR" "$CONFIG_FILE")"
     
-    DEDUP_DIR="/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/3-hop/${MODE}/${SHORT_MODEL_DIR}"
+    # CONFIG_FILE에 따라 다른 디렉토리 경로 설정
+    if [ "$CONFIG_FILE" = "analysis_list_cot_paper.json" ]; then
+        POS_RANGE=(1 2 3)
+        ATOMIC_IDX_RANGE=(1 2)
+    else
+        POS_RANGE=(0 1 2)
+        ATOMIC_IDX_RANGE=(1)
+    fi
+    DEDUP_DIR="/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/2-hop/${MODE}/${SHORT_MODEL_DIR}"
     DATASET="${SHORT_MODEL_DIR}"
     
-    for POS in 1 2 3
+    for POS in "${POS_RANGE[@]}"
     do
-        for LAYER in 1 2 3 4 5 6 7 8 logit prob
+        for LAYER in 4 5 6 7 8 logit prob
         do
-            for ATOMIC_IDX in 1 2 3
+            for ATOMIC_IDX in "${ATOMIC_IDX_RANGE[@]}"
             do
                 for STEP in $(get_steps "$MODEL_DIR" "$CONFIG_FILE")
                 do
@@ -56,7 +65,27 @@ process_model() {
                         --id_train_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/id_train_dedup.json" \
                         --id_test_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/id_test_dedup.json" \
                         --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/ood_dedup.json" \
-                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/3-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/step${STEP}" \
+                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/step${STEP}" \
+                        --save_plots \
+                        --reduce_method pca \
+                        --pca_scope global \
+                        --pca_n 5 &
+                    
+                    python "$PARENT_DIR/plotting_collapse.py" \
+                        --id_train_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/id_train_dedup.json" \
+                        --id_test_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/id_test_low_cutoff_dedup.json" \
+                        --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/ood_dedup.json" \
+                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/step${STEP}/low_cutoff" \
+                        --save_plots \
+                        --reduce_method pca \
+                        --pca_scope global \
+                        --pca_n 5 &
+
+                    python "$PARENT_DIR/plotting_collapse.py" \
+                        --id_train_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/id_train_dedup.json" \
+                        --id_test_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/id_test_high_cutoff_dedup.json" \
+                        --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/ood_dedup.json" \
+                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/step${STEP}/high_cutoff" \
                         --save_plots \
                         --reduce_method pca \
                         --pca_scope global \
@@ -73,14 +102,35 @@ process_model() {
                         --id_train_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/id_train_dedup.json" \
                         --id_test_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/id_test_dedup.json" \
                         --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/ood_dedup.json" \
-                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/3-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/stepfinal_checkpoint" \
+                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/stepfinal_checkpoint" \
                         --save_plots \
                         --reduce_method pca \
                         --pca_scope global \
                         --pca_n 5 &
+
+                    python "$PARENT_DIR/plotting_collapse.py" \
+                        --id_train_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/id_train_dedup.json" \
+                        --id_test_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/id_test_low_cutoff_dedup.json" \
+                        --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/ood_dedup.json" \
+                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/stepfinal_checkpoint/low_cutoff" \
+                        --save_plots \
+                        --reduce_method pca \
+                        --pca_scope global \
+                        --pca_n 5 &
+
+                    python "$PARENT_DIR/plotting_collapse.py" \
+                        --id_train_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/id_train_dedup.json" \
+                        --id_test_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/id_test_high_cutoff_dedup.json" \
+                        --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/ood_dedup.json" \
+                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/stepfinal_checkpoint/high_cutoff" \
+                        --save_plots \
+                        --reduce_method pca \
+                        --pca_scope global \
+                        --pca_n 5 &
+
                 fi
+                wait
             done
-            wait
         done
     done
     echo "=== Finished processing $MODEL_DIR ==="
