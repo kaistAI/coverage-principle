@@ -13,8 +13,8 @@ bash collapse_analysis_nontree.sh
 echo "Running measure_cossim.sh..."
 bash measure_cossim.sh
 
-# echo "Running plotting_collapse.sh..."
-# bash plotting_collapse.sh
+echo "Running plotting_collapse.sh..."
+bash plotting_collapse.sh
 
 # 원래 디렉토리로 돌아가기
 cd "$CURRENT_DIR"

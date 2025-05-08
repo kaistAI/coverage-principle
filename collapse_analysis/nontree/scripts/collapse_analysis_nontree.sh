@@ -31,12 +31,12 @@ process_model() {
     do
         for LAYER in 1 2 3 4 5 6 7 8 logit prob
         do
-            for ATOMIC_IDX in 1 2 4
+            for ATOMIC_IDX in 1 2 3 4
             do
                 for STEP in $(get_steps "$MODEL_DIR" "$CONFIG_FILE")
                 do
                     CHECKPOINT_DIR="/mnt/nas/hoyeon/GrokkedTransformer/trained_checkpoints/${MODEL_DIR}/checkpoint-${STEP}"
-                    CUDA_VISIBLE_DEVICES=2 python ../collapse_analysis_nontree.py \
+                    CUDA_VISIBLE_DEVICES=3 python ../collapse_analysis_nontree.py \
                         --ckpt ${CHECKPOINT_DIR}/ \
                         --data_dir /mnt/sda/hoyeon/GrokkedTransformer \
                         --layer_pos_pairs "[(${LAYER},${POS})]" \
@@ -47,7 +47,7 @@ process_model() {
 
                 if [ "$(get_include_final "$MODEL_DIR" "$CONFIG_FILE")" = "true" ]; then
                     CHECKPOINT_DIR="/mnt/nas/hoyeon/GrokkedTransformer/trained_checkpoints/${MODEL_DIR}/final_checkpoint"
-                    CUDA_VISIBLE_DEVICES=2 python ../collapse_analysis_nontree.py \
+                    CUDA_VISIBLE_DEVICES=3 python ../collapse_analysis_nontree.py \
                         --ckpt ${CHECKPOINT_DIR}/ \
                         --data_dir /mnt/sda/hoyeon/GrokkedTransformer \
                         --layer_pos_pairs "[(${LAYER},${POS})]" \

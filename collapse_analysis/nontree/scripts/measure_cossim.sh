@@ -43,7 +43,7 @@ process_model() {
     do
         for LAYER in 1 2 3 4 5 6 7 8 logit prob
         do
-            for ATOMIC_IDX in 1 2 4
+            for ATOMIC_IDX in 1 2 3 4
             do
                 for STEP in $(get_steps "$MODEL_DIR" "$CONFIG_FILE")
                 do
@@ -52,7 +52,7 @@ process_model() {
                         continue
                     fi
 
-                    CUDA_VISIBLE_DEVICES=2 python "$PARENT_DIR/measure_cossim.py" \
+                    CUDA_VISIBLE_DEVICES=3 python "$PARENT_DIR/measure_cossim.py" \
                         --id_train_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/id_train_dedup.json" \
                         --id_test_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/id_test_dedup.json" \
                         --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/ood_dedup.json" \
@@ -65,7 +65,7 @@ process_model() {
                         continue
                     fi
 
-                    CUDA_VISIBLE_DEVICES=2 python "$PARENT_DIR/measure_cossim.py" \
+                    CUDA_VISIBLE_DEVICES=3 python "$PARENT_DIR/measure_cossim.py" \
                         --id_train_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/id_train_dedup.json" \
                         --id_test_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/id_test_dedup.json" \
                         --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/ood_dedup.json" \

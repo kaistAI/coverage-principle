@@ -43,7 +43,7 @@ process_model() {
     do
         for LAYER in 1 2 3 4 5 6 7 8 logit prob
         do
-            for ATOMIC_IDX in 4
+            for ATOMIC_IDX in 1 2 3 4
             do
                 for STEP in $(get_steps "$MODEL_DIR" "$CONFIG_FILE")
                 do

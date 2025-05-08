@@ -25,8 +25,8 @@ def parse_tokens(text):
 def load_atomic_facts_nontree(f1_path, f2_path):
     """
     For the non-tree DAG problem, we parse:
-      f1: (t0, t1) -> b1
-      f2: (b1, t1, t2) -> y
+      f1: (x1, x2) -> b1
+      f2: (b, x2, x3) -> y
     Return two dicts: f1_dict, f2_dict
     """
 
@@ -105,6 +105,19 @@ def group_data_by_t_final(examples, f1_dict, f2_dict):
         group_dict[t_final].append(ex)
     return dict(group_dict)
 
+def group_data_by_t2(examples):
+    """
+    For each example: parse (t0,t1,t2),
+    group by t2 => group_dict[t2] = list of examples
+    """
+    group_dict = defaultdict(list)
+    for ex in examples:
+        inp_tokens = parse_tokens(ex["input_text"])
+        assert len(inp_tokens) == 3
+        t1, t2, t3 = inp_tokens
+        group_dict[t2].append(ex)
+    return dict(group_dict)
+
 def group_data_by_b1_t2(examples, f1_dict, f2_dict):
     """
     Returns a dictionary mapping (b1, t2) pair to a list of examples.
@@ -124,11 +137,18 @@ def group_data_by_b1_t2(examples, f1_dict, f2_dict):
 ###############################################################################
 def load_and_preprocess_data(f1_dict, f2_dict, test_path, idx):
     """
-    - read test.json => separate examples by coverage 'type'
-    - 'train_inferred' => in-domain train
-    - 'type_0' => in-domain test
-    - everything else => OOD test
-    - group by b1 if idx=1, or by y if idx=2, or by b1 + t2 if idx=4
+    데이터를 로드하고 전처리합니다.
+    
+    Args:
+        f1_dict: 첫 번째 함수의 매핑 딕셔너리
+        f2_dict: 두 번째 함수의 매핑 딕셔너리
+        test_path: 테스트 데이터 파일 경로
+        idx: 그룹핑 방식 (1: b1 기준, 2: y 기준, 3: t2 기준, 4: b1+t2 기준)
+    
+    Returns:
+        grouped_id_train_data: ID 학습 데이터 그룹
+        grouped_id_test_data: ID 테스트 데이터 그룹
+        grouped_ood_test_data: OOD 테스트 데이터 그룹
     """
     with open(test_path, 'r') as f:
         test_data = json.load(f)
@@ -149,6 +169,8 @@ def load_and_preprocess_data(f1_dict, f2_dict, test_path, idx):
             elif idx == 2:
                 if d['type'] in ['type_1', 'type_3']:
                     ood_test_data.append(d)
+            elif idx == 3:  # kind of weird...
+                ood_test_data.append(d)
             elif idx == 4:
                 if d['type'] in ['type_1', 'type_2']:
                     ood_test_data.append(d)
@@ -165,12 +187,16 @@ def load_and_preprocess_data(f1_dict, f2_dict, test_path, idx):
         grouped_id_train_data = group_data_by_t_final(id_train_data, f1_dict, f2_dict)
         grouped_id_test_data = group_data_by_t_final(id_test_data, f1_dict, f2_dict)
         grouped_ood_test_data = group_data_by_t_final(ood_test_data, f1_dict, f2_dict)
+    elif idx == 3:
+        grouped_id_train_data = group_data_by_t2(id_train_data)
+        grouped_id_test_data = group_data_by_t2(id_test_data)
+        grouped_ood_test_data = group_data_by_t2(ood_test_data)
     elif idx == 4:
         grouped_id_train_data = group_data_by_b1_t2(id_train_data, f1_dict, f2_dict)
         grouped_id_test_data = group_data_by_b1_t2(id_test_data, f1_dict, f2_dict)
         grouped_ood_test_data = group_data_by_b1_t2(ood_test_data, f1_dict, f2_dict)
     else:
-        raise NotImplementedError("atomic_idx must be 1 (group by b1) or 2 (group by y).")
+        raise NotImplementedError("atomic_idx must be 1 (group by b1), 2 (group by y), 3 (group by t2), or 4 (group by b1+t2)")
 
     return grouped_id_train_data, grouped_id_test_data, grouped_ood_test_data
 
@@ -386,10 +412,12 @@ def deduplicate_grouped_data(grouped_data, atomic_idx):
                 dedup_key = tuple(tokens[:2])  # (t1, t2)
             elif atomic_idx == 2:
                 dedup_key = tuple(tokens[:3])  # (t1, t2, t3)
+            elif atomic_idx == 3:
+                dedup_key = tuple(tokens[:3])  # (t1, t2, t3)
             elif atomic_idx == 4:
                 dedup_key = tuple(tokens[:2])  # (t1, t2)
             else:
-                raise ValueError("atomic_idx must be 1, 2, or 3")
+                raise ValueError("atomic_idx must be 1, 2, 3 or 4")
 
             if dedup_key not in deduped:
                 deduped[dedup_key] = entry
@@ -397,6 +425,11 @@ def deduplicate_grouped_data(grouped_data, atomic_idx):
 
     return output
 
+def save_results(results, save_path):
+    """결과를 JSON 파일로 저장합니다."""
+    with open(save_path, "w") as f:
+        json.dump(results, f)
+    logging.info(f"Saved results to {save_path}")
 
 def main():
     parser = argparse.ArgumentParser()
@@ -406,12 +439,12 @@ def main():
     parser.add_argument("--save_dir", required=True, help="Directory to save the analysis results")
     parser.add_argument("--device", type=str, default="cuda", help="Device to run the model on")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode for verbose output")
-    parser.add_argument("--atomic_idx", required=True, type=int, choices=[1,2,4], help="which function's bridging entity to group by: 1 => b1, 2 => final y")
+    parser.add_argument("--atomic_idx", required=True, type=int, choices=[1,2,3,4], help="which function's bridging entity to group by: 1 => b1, 2 => final y, 3 => t2, 4 => b1 + t2")
     parser.add_argument("--mode", required=True, choices=["post_mlp","residual"], help="whether to save the hidden representation of post_mlp or the residual stream")
     parser.add_argument("--batch_size", type=int, default=4096, help="Batch size for processing")
+    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing save directory if it exists")
     
     args = parser.parse_args()
-    assert args.mode in ["post_mlp", "residual"]
 
     setup_logging(args.debug)
     
@@ -455,7 +488,6 @@ def main():
     
     # 정규식을 사용한 파싱 로직
     if "logit" in args.layer_pos_pairs or "prob" in args.layer_pos_pairs:
-        # 정규식으로 숫자 추출
         pos_match = re.search(r"\((logit|prob|\d+),(\d+)\)", args.layer_pos_pairs)
         if pos_match:
             layer_type = pos_match.group(1)
@@ -505,37 +537,26 @@ def main():
     # 작은따옴표를 제거한 경로 생성
     layer_pos_str = str(layer_pos_pairs[0]).replace("'", "").replace(" ", "")
     save_dir = os.path.join(args.save_dir, args.mode, dataset, f"f{args.atomic_idx}", layer_pos_str, step)
+    
+    # 저장 디렉토리 처리
     if os.path.exists(save_dir):
-        logging.info(f"{save_dir} already exists!")
+        if args.overwrite:
+            logging.info(f"Overwriting existing directory: {save_dir}")
+            import shutil
+            shutil.rmtree(save_dir)
+            os.makedirs(save_dir)
+        else:
+            logging.warning(f"Directory already exists: {save_dir}")
+            logging.warning("Use --overwrite flag to overwrite existing directory")
+            return
     else:
-        os.makedirs(save_dir, exist_ok=True)
+        os.makedirs(save_dir)
+        logging.info(f"Created new directory: {save_dir}")
 
-    id_train_save = os.path.join(save_dir, "id_train_dedup.json")
-    with open(id_train_save, "w") as f:
-        json.dump(id_train_dedup, f)
-    logging.info(f"Saved deduplicated ID train results to {id_train_save}")
-
-    id_test_save = os.path.join(save_dir, "id_test_dedup.json")
-    with open(id_test_save, "w") as f:
-        json.dump(id_test_dedup, f)
-    logging.info(f"Saved deduplicated ID test results to {id_test_save}")
-    
-    ood_save = os.path.join(save_dir, "ood_dedup.json")
-    with open(ood_save, "w") as f:
-        json.dump(ood_dedup, f)
-    logging.info(f"Saved deduplicated OOD test results to {ood_save}")
-    
-    # id_train_stats_path = os.path.join(save_dir, "dedup_stats_id_train.json")
-    # with open(id_train_stats_path, "w") as f:
-    #     json.dump(id_train_stats, f)
-    
-    # id_test_stats_path = os.path.join(save_dir, "dedup_stats_id_test.json")
-    # with open(id_test_stats_path, "w") as f:
-    #     json.dump(id_test_stats, f)
-    
-    # ood_stats_path = os.path.join(save_dir, "dedup_stats_ood.json")
-    # with open(ood_stats_path, "w") as f:
-    #     json.dump(ood_stats, f)
+    # 결과 저장
+    save_results(id_train_dedup, os.path.join(save_dir, "id_train_dedup.json"))
+    save_results(id_test_dedup, os.path.join(save_dir, "id_test_dedup.json"))
+    save_results(ood_dedup, os.path.join(save_dir, "ood_dedup.json"))
 
     logging.info("Finished all. Final deduplication stats:")
     logging.info(f"ID train: {len(id_train_dedup)} groups, ID test: {len(id_test_dedup)} groups, OOD: {len(ood_dedup)} groups")
