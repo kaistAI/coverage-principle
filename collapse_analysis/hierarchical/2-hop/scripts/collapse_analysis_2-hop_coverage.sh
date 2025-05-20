@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# 에러 발생 시 스크립트 중단
+set -e
+
 MODE=residual
 CONFIG_FILES=("analysis_list_coverage.json")
 
@@ -42,7 +45,25 @@ process_model() {
                         --save_dir /mnt/nas/jinho/GrokkedTransformer/collapse_analysis/2-hop/ \
                         --atomic_idx ${ATOMIC_IDX} \
                         --mode ${MODE} \
-                        --detailed_grouping &
+                        --detailed_grouping 1 &
+                    CHECKPOINT_DIR="/mnt/nas/hoyeon/GrokkedTransformer/trained_checkpoints/${MODEL_DIR}/checkpoint-${STEP}"
+                    CUDA_VISIBLE_DEVICES=3 python ../collapse_analysis_2-hop_coverage.py \
+                        --ckpt ${CHECKPOINT_DIR}/ \
+                        --base_dir /mnt/sda/hoyeon/GrokkedTransformer \
+                        --layer_pos_pairs "[(${LAYER},${POS})]" \
+                        --save_dir /mnt/nas/jinho/GrokkedTransformer/collapse_analysis/2-hop/ \
+                        --atomic_idx ${ATOMIC_IDX} \
+                        --mode ${MODE} \
+                        --detailed_grouping 2 &
+                    CHECKPOINT_DIR="/mnt/nas/hoyeon/GrokkedTransformer/trained_checkpoints/${MODEL_DIR}/checkpoint-${STEP}"
+                    CUDA_VISIBLE_DEVICES=3 python ../collapse_analysis_2-hop_coverage.py \
+                        --ckpt ${CHECKPOINT_DIR}/ \
+                        --base_dir /mnt/sda/hoyeon/GrokkedTransformer \
+                        --layer_pos_pairs "[(${LAYER},${POS})]" \
+                        --save_dir /mnt/nas/jinho/GrokkedTransformer/collapse_analysis/2-hop/ \
+                        --atomic_idx ${ATOMIC_IDX} \
+                        --mode ${MODE} \
+                        --detailed_grouping 3 &
                 done
 
                 if [ "$(get_include_final "$MODEL_DIR" "$CONFIG_FILE")" = "true" ]; then
@@ -54,7 +75,23 @@ process_model() {
                         --save_dir /mnt/nas/jinho/GrokkedTransformer/collapse_analysis/2-hop/ \
                         --atomic_idx ${ATOMIC_IDX} \
                         --mode ${MODE} \
-                        --detailed_grouping &
+                        --detailed_grouping 1 &
+                    CUDA_VISIBLE_DEVICES=3 python ../collapse_analysis_2-hop_coverage.py \
+                        --ckpt ${CHECKPOINT_DIR}/ \
+                        --base_dir /mnt/sda/hoyeon/GrokkedTransformer \
+                        --layer_pos_pairs "[(${LAYER},${POS})]" \
+                        --save_dir /mnt/nas/jinho/GrokkedTransformer/collapse_analysis/2-hop/ \
+                        --atomic_idx ${ATOMIC_IDX} \
+                        --mode ${MODE} \
+                        --detailed_grouping 2 &
+                    CUDA_VISIBLE_DEVICES=3 python ../collapse_analysis_2-hop_coverage.py \
+                        --ckpt ${CHECKPOINT_DIR}/ \
+                        --base_dir /mnt/sda/hoyeon/GrokkedTransformer \
+                        --layer_pos_pairs "[(${LAYER},${POS})]" \
+                        --save_dir /mnt/nas/jinho/GrokkedTransformer/collapse_analysis/2-hop/ \
+                        --atomic_idx ${ATOMIC_IDX} \
+                        --mode ${MODE} \
+                        --detailed_grouping 3 &
                 fi
                 wait
             done

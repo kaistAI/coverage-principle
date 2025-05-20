@@ -7,8 +7,8 @@ CURRENT_DIR=$(pwd)
 cd "$(dirname "$0")"
 
 # 각 분석 스크립트 실행
-# echo "Running collapse_analysis_2-hop.sh..."
-# bash collapse_analysis_2-hop.sh
+echo "Running collapse_analysis_2-hop.sh..."
+bash collapse_analysis_2-hop.sh
 
 # echo "Running collapse_analysis_2-hop_coverage.sh..."
 # bash collapse_analysis_2-hop_coverage.sh
@@ -16,8 +16,17 @@ cd "$(dirname "$0")"
 # echo "Running collapse_analysis_2-hop_cot.sh..."
 # bash collapse_analysis_2-hop_cot.sh
 
-echo "Running measure_cossim_coverage_each.sh..."
-bash measure_cossim_coverage_each.sh
+echo "Running measure_cossim.sh..."
+bash measure_cossim.sh
+
+# echo "Running measure_cossim_coverage_1.sh..."
+# bash measure_cossim_coverage_1.sh
+
+# echo "Running measure_cossim_coverage_2.sh..."
+# bash measure_cossim_coverage_2.sh
+
+# echo "Running measure_cossim_coverage_3.sh..."
+# bash measure_cossim_coverage_3.sh
 
 # echo "Running plotting_collapse.sh..."
 # bash plotting_collapse_coverage.sh

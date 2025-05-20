@@ -39,7 +39,7 @@ process_model() {
     DEDUP_DIR="/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/3-hop/${MODE}/${SHORT_MODEL_DIR}"
     DATASET="${SHORT_MODEL_DIR}"
     
-    for POS in 1 2 3
+    for POS in 0 1 2 3
     do
         for LAYER in 1 2 3 4 5 6 7 8 logit prob
         do
@@ -71,8 +71,8 @@ process_model() {
                         --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/ood_dedup.json" \
                         --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/3-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/stepfinal_checkpoint" &
                 fi
+                wait
             done
-            wait
         done
     done
     echo "=== Finished processing $MODEL_DIR ==="

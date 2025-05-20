@@ -43,14 +43,14 @@ process_model() {
         ATOMIC_IDX_RANGE=(1 2)
     else
         POS_RANGE=(0 1 2)
-        ATOMIC_IDX_RANGE=(1)
+        ATOMIC_IDX_RANGE=(1 2)
     fi
     DEDUP_DIR="/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/2-hop/${MODE}/${SHORT_MODEL_DIR}"
     DATASET="${SHORT_MODEL_DIR}"
     
     for POS in "${POS_RANGE[@]}"
     do
-        for LAYER in 4 5 6 7 8 logit prob
+        for LAYER in 1 2 3 4 5 6 7 8 logit prob
         do
             for ATOMIC_IDX in "${ATOMIC_IDX_RANGE[@]}"
             do

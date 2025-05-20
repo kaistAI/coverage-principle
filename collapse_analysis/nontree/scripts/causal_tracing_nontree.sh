@@ -6,23 +6,50 @@ cd "$(dirname "$0")"
 CURRENT_DIR=$(pwd)
 cd "$(dirname "$CURRENT_DIR")"
 
-CUDA_VISIBLE_DEVICES=3 python causal_tracing_nontree.py \
+CUDA_VISIBLE_DEVICES=2 python causal_tracing_nontree.py \
     --model_dir /mnt/nas/hoyeon/GrokkedTransformer/trained_checkpoints/nontree.50.50000.diff-f12.inf_wd-0.1_layer-8_head-12_seed-42 \
     --data_dir /mnt/sda/hoyeon/GrokkedTransformer \
-    --step_list 50000 100000 \
+    --step_list 50000 \
     --atomic_idx 1 \
+    --metric_type rank \
     --batch_size 2048
 
-# CUDA_VISIBLE_DEVICES=2 python causal_tracing_nontree.py \
-#     --model_dir /mnt/nas/hoyeon/GrokkedTransformer/trained_checkpoints/nontree.50.50000.diff-f12.inf_wd-0.1_layer-8_head-12_seed-42 \
-#     --data_dir /mnt/sda/hoyeon/GrokkedTransformer \
-#     --step_list 50000 100000 \
-#     --atomic_idx 4 \
-#     --batch_size 4096
+CUDA_VISIBLE_DEVICES=2 python causal_tracing_nontree.py \
+    --model_dir /mnt/nas/hoyeon/GrokkedTransformer/trained_checkpoints/nontree.50.50000.diff-f12.inf_wd-0.1_layer-8_head-12_seed-42 \
+    --data_dir /mnt/sda/hoyeon/GrokkedTransformer \
+    --step_list 50000 \
+    --atomic_idx 4 \
+    --metric_type rank \
+    --batch_size 2048
 
-# CUDA_VISIBLE_DEVICES=2 python causal_tracing_nontree.py \
-#     --model_dir /mnt/nas/hoyeon/GrokkedTransformer/trained_checkpoints/nontree.50.50000.diff-f12.inf_wd-0.1_layer-8_head-12_seed-42 \
-#     --data_dir /mnt/sda/hoyeon/GrokkedTransformer \
-#     --step_list 50000 100000 \
-#     --atomic_idx 5 \
-#     --batch_size 4096
+CUDA_VISIBLE_DEVICES=2 python causal_tracing_nontree.py \
+    --model_dir /mnt/nas/hoyeon/GrokkedTransformer/trained_checkpoints/nontree.50.50000.diff-f12.inf_wd-0.1_layer-8_head-12_seed-42 \
+    --data_dir /mnt/sda/hoyeon/GrokkedTransformer \
+    --step_list 50000 \
+    --atomic_idx 5 \
+    --metric_type rank \
+    --batch_size 2048
+
+CUDA_VISIBLE_DEVICES=2 python causal_tracing_nontree.py \
+    --model_dir /mnt/nas/hoyeon/GrokkedTransformer/trained_checkpoints/nontree.50.50000.diff-f12.inf_wd-0.1_layer-8_head-12_seed-42 \
+    --data_dir /mnt/sda/hoyeon/GrokkedTransformer \
+    --step_list 50000 \
+    --atomic_idx 1 \
+    --metric_type prob \
+    --batch_size 2048
+
+CUDA_VISIBLE_DEVICES=2 python causal_tracing_nontree.py \
+    --model_dir /mnt/nas/hoyeon/GrokkedTransformer/trained_checkpoints/nontree.50.50000.diff-f12.inf_wd-0.1_layer-8_head-12_seed-42 \
+    --data_dir /mnt/sda/hoyeon/GrokkedTransformer \
+    --step_list 50000 \
+    --atomic_idx 4 \
+    --metric_type prob \
+    --batch_size 2048
+
+CUDA_VISIBLE_DEVICES=2 python causal_tracing_nontree.py \
+    --model_dir /mnt/nas/hoyeon/GrokkedTransformer/trained_checkpoints/nontree.50.50000.diff-f12.inf_wd-0.1_layer-8_head-12_seed-42 \
+    --data_dir /mnt/sda/hoyeon/GrokkedTransformer \
+    --step_list 50000 \
+    --atomic_idx 5 \
+    --metric_type prob \
+    --batch_size 2048

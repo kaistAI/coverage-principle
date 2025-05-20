@@ -2,7 +2,8 @@
 
 MODE=residual
 # CONFIG_FILES를 배열로 선언
-CONFIG_FILES=("analysis_list_paper.json")  # 여기에 필요한 config 파일들을 추가하세요
+CONFIG_FILES=("analysis_list_paper.json" "analysis_list_cot_paper.json")
+# CONFIG_FILES=("analysis_list_cot_paper.json")
 
 # JSON 파일을 읽어서 jq로 파싱하는 함수
 get_steps() {
@@ -27,16 +28,23 @@ process_model() {
     echo "Steps to analyze: $(get_steps "$MODEL_DIR" "$CONFIG_FILE")"
     echo "Include final checkpoint: $(get_include_final "$MODEL_DIR" "$CONFIG_FILE")"
     
-    for POS in 0 1 2
+    # CONFIG_FILE에 따라 다른 POS_RANGE 설정
+    if [ "$CONFIG_FILE" = "analysis_list_cot_paper.json" ]; then
+        POS_RANGE=(0 1 2 3)
+    else
+        POS_RANGE=(0 1 2)
+    fi
+    
+    for POS in "${POS_RANGE[@]}"
     do
         for LAYER in 1 2 3 4 5 6 7 8 logit prob
         do
-            for ATOMIC_IDX in 1 2 3 4
+            for ATOMIC_IDX in 1 2 3 4 5
             do
                 for STEP in $(get_steps "$MODEL_DIR" "$CONFIG_FILE")
                 do
                     CHECKPOINT_DIR="/mnt/nas/hoyeon/GrokkedTransformer/trained_checkpoints/${MODEL_DIR}/checkpoint-${STEP}"
-                    CUDA_VISIBLE_DEVICES=3 python ../collapse_analysis_nontree.py \
+                    CUDA_VISIBLE_DEVICES=2 python ../collapse_analysis_nontree.py \
                         --ckpt ${CHECKPOINT_DIR}/ \
                         --data_dir /mnt/sda/hoyeon/GrokkedTransformer \
                         --layer_pos_pairs "[(${LAYER},${POS})]" \
@@ -47,7 +55,7 @@ process_model() {
 
                 if [ "$(get_include_final "$MODEL_DIR" "$CONFIG_FILE")" = "true" ]; then
                     CHECKPOINT_DIR="/mnt/nas/hoyeon/GrokkedTransformer/trained_checkpoints/${MODEL_DIR}/final_checkpoint"
-                    CUDA_VISIBLE_DEVICES=3 python ../collapse_analysis_nontree.py \
+                    CUDA_VISIBLE_DEVICES=2 python ../collapse_analysis_nontree.py \
                         --ckpt ${CHECKPOINT_DIR}/ \
                         --data_dir /mnt/sda/hoyeon/GrokkedTransformer \
                         --layer_pos_pairs "[(${LAYER},${POS})]" \
@@ -56,7 +64,7 @@ process_model() {
                         --mode ${MODE} &
                 fi
             done
-            wait
+            wait  # 현재 LAYER의 모든 ATOMIC_IDX 처리가 완료될 때까지 대기
         done
     done
     echo "=== Finished processing $MODEL_DIR ==="

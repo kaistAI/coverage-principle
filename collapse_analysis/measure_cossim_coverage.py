@@ -413,16 +413,20 @@ def main():
     output_dir = Path(args.output_dir)
     if os.path.basename(args.id_test_file) == "id_test_dedup.json":
         output_dir.mkdir(parents=True, exist_ok=True)
+    elif os.path.basename(args.id_test_file) == "id_test_covered_low_cutoff_dedup.json":
+        output_dir = output_dir / "low_cutoff"
+        output_dir.mkdir(parents=True, exist_ok=True)
+    elif os.path.basename(args.id_test_file) == "id_test_covered_high_cutoff_dedup.json":
+        output_dir = output_dir / "high_cutoff"
+        output_dir.mkdir(parents=True, exist_ok=True)
+    elif os.path.basename(args.id_test_file) == "id_test_covered_mid_cutoff_dedup.json":
+        output_dir = output_dir / "mid_cutoff"
+        output_dir.mkdir(parents=True, exist_ok=True)
     elif "id_test_covered_" in os.path.basename(args.id_test_file):
         k_cutoff = os.path.basename(args.id_test_file).split("covered_")[1].split("_dedup.json")[0]
         output_dir = output_dir / f"covered_{k_cutoff}"
         output_dir.mkdir(parents=True, exist_ok=True)
-    elif os.path.basename(args.id_test_file) == "id_test_low_cutoff_dedup.json":
-        output_dir = output_dir / "low_cutoff"
-        output_dir.mkdir(parents=True, exist_ok=True)
-    elif os.path.basename(args.id_test_file) == "id_test_high_cutoff_dedup.json":
-        output_dir = output_dir / "high_cutoff"
-        output_dir.mkdir(parents=True, exist_ok=True)
+
     results_file_name = output_dir / f"similarity_metrics_layer{target_layer}.txt"
     metrics_json_file = output_dir / "metrics_results.json"
     

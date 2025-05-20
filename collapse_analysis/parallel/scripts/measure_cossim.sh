@@ -39,7 +39,7 @@ process_model() {
     DEDUP_DIR="/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/parallel/${MODE}/${SHORT_MODEL_DIR}"
     DATASET="${SHORT_MODEL_DIR}"
     
-    for POS in 1 2 3
+    for POS in 0 1 2 3
     do
         for LAYER in 1 2 3 4 5 6 7 8 logit prob
         do

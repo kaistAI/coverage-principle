@@ -8,8 +8,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PARENT_DIR="$(dirname "$(dirname "$(dirname "$SCRIPT_DIR")")")"
 
 MODE=residual
-# CONFIG_FILES=("analysis_list_paper.json" "analysis_list_cot_paper.json")
-CONFIG_FILES=("analysis_list_paper.json")
+CONFIG_FILES=("analysis_list_coverage.json")
 
 # JSON 파일을 읽어서 jq로 파싱하는 함수
 get_steps() {
@@ -37,13 +36,11 @@ process_model() {
     echo "Steps to analyze: $(get_steps "$MODEL_DIR" "$CONFIG_FILE")"
     echo "Include final checkpoint: $(get_include_final "$MODEL_DIR" "$CONFIG_FILE")"
     
-    # CONFIG_FILE에 따라 다른 디렉토리 경로 설정
-    if [ "$CONFIG_FILE" = "analysis_list_paper.json" ]; then
-        POS_RANGE=(1 2)
-        ATOMIC_IDX_RANGE=(1 2)
+    # CONFIG_FILE에 따라 다른 POS_RANGE 설정
+    if [ "$CONFIG_FILE" = "analysis_list_cot_paper.json" ]; then
+        POS_RANGE=(0 1 2 3)
     else
-        POS_RANGE=(1 2 3)
-        ATOMIC_IDX_RANGE=(1 2)
+        POS_RANGE=(0 1 2)
     fi
     
     DEDUP_DIR="/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/2-hop/${MODE}/${SHORT_MODEL_DIR}"
@@ -53,7 +50,7 @@ process_model() {
     do
         for LAYER in 1 2 3 4 5 6 7 8 logit prob
         do
-            for ATOMIC_IDX in "${ATOMIC_IDX_RANGE[@]}"
+            for ATOMIC_IDX in 4
             do
                 for STEP in $(get_steps "$MODEL_DIR" "$CONFIG_FILE")
                 do
@@ -62,7 +59,7 @@ process_model() {
                         continue
                     fi
 
-                    CUDA_VISIBLE_DEVICES=2 python "$PARENT_DIR/measure_cossim.py" \
+                    CUDA_VISIBLE_DEVICES=3 python "$PARENT_DIR/measure_cossim.py" \
                         --id_train_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/id_train_dedup.json" \
                         --id_test_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/id_test_dedup.json" \
                         --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/ood_dedup.json" \
@@ -75,14 +72,14 @@ process_model() {
                         continue
                     fi
 
-                    CUDA_VISIBLE_DEVICES=2 python "$PARENT_DIR/measure_cossim.py" \
+                    CUDA_VISIBLE_DEVICES=3 python "$PARENT_DIR/measure_cossim.py" \
                         --id_train_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/id_train_dedup.json" \
                         --id_test_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/id_test_dedup.json" \
                         --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/ood_dedup.json" \
                         --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/stepfinal_checkpoint" &
                 fi
+                wait
             done
-            wait
         done
     done
     echo "=== Finished processing $MODEL_DIR ==="

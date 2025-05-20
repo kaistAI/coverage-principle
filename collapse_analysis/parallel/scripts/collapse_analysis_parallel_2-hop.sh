@@ -27,7 +27,7 @@ process_model() {
     echo "Steps to analyze: $(get_steps "$MODEL_DIR" "$CONFIG_FILE")"
     echo "Include final checkpoint: $(get_include_final "$MODEL_DIR" "$CONFIG_FILE")"
     
-    for POS in 1 2 3
+    for POS in 0 1 2 3
     do
         for LAYER in 1 2 3 4 5 6 7 8 logit prob
         do
