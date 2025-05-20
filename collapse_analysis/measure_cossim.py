@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 import plotly.express as px
+import os
 
 def load_data(file_path):
     print(f"\nLoading data from: {file_path}")
@@ -414,6 +415,10 @@ def main():
 
     results_file_name = output_dir / f"similarity_metrics_layer{target_layer}.txt"
     metrics_json_file = output_dir / "metrics_results.json"
+    
+    if os.path.exists(results_file_name) and os.path.exists(metrics_json_file):
+        print(f"Results file {results_file_name} and metrics file {metrics_json_file} already exists!")
+        return
 
     # Load data
     id_train_data = load_data(args.id_train_file)

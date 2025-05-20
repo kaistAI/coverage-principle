@@ -10,14 +10,14 @@ import re
 
 
 def setup_logging(debug_mode):
-    """Set up logging with DEBUG level if debug_mode is True, otherwise INFO level."""
+    """Configure logging level based on debug mode."""
     level = logging.DEBUG if debug_mode else logging.INFO
     logging.basicConfig(level=level, format='%(levelname)s - %(message)s')
     
 
 def parse_tokens(text):
-    tokens = text.replace("</a>", "").strip("><").split("><")
-    return tokens
+    """Parse tokens from text format <t1><t2><t3></a>."""
+    return text.replace("</a>", "").strip("><").split("><")
 
 
 def load_atomic_facts_3hop(f1_path, f2_path, f3_path):
@@ -31,12 +31,7 @@ def load_atomic_facts_3hop(f1_path, f2_path, f3_path):
     f1_dict, f2_dict, f3_dict = {}, {}, {}
 
     def parse_atomic_facts(file_path):
-        """
-        Parse an atomic fact file with the following format:
-          "input_text": "<t_N1><t_N2>"
-          "target_text": "<t_N1><t_N2><t_N3></a>"
-        This corresponds to the mapping (t_N1, t_N2) -> t_N3
-        """
+        """Parse atomic facts from JSON file."""
         with open(file_path, "r") as f:
             facts = json.load(f)
         out_dict = {}
@@ -47,12 +42,8 @@ def load_atomic_facts_3hop(f1_path, f2_path, f3_path):
             assert len(tgt_tokens) == 3 and inp_tokens == tgt_tokens[:2]
             out_dict[(tgt_tokens[0], tgt_tokens[1])] = tgt_tokens[-1]
         return out_dict
-
-    f1_dict = parse_atomic_facts(f1_path)
-    f2_dict = parse_atomic_facts(f2_path)
-    f3_dict = parse_atomic_facts(f3_path)
     
-    return f1_dict, f2_dict, f3_dict
+    return parse_atomic_facts(f1_path), parse_atomic_facts(f2_path), parse_atomic_facts(f3_path)
 
 ###############################################################################
 # 2) Helpers for 3-Hop Input & Grouping
@@ -64,9 +55,7 @@ def group_data_by_b1(examples, f1_dict):
     """
     group_dict = defaultdict(list)
     for ex in examples:
-        inp_tokens = parse_tokens(ex["input_text"])
-        assert len(inp_tokens) == 4
-        t1, t2, _, _ = inp_tokens
+        t1, t2, _, _ = parse_tokens(ex["input_text"])
         b1 = f1_dict.get((t1, t2))
         group_dict[b1].append(ex)
     return dict(group_dict)
@@ -77,9 +66,7 @@ def group_data_by_b2(examples, f1_dict, f2_dict):
     """
     group_dict = defaultdict(list)
     for ex in examples:
-        inp_tokens = parse_tokens(ex["input_text"])
-        assert len(inp_tokens) == 4
-        t1, t2, t3, _ = inp_tokens
+        t1, t2, t3, _ = parse_tokens(ex["input_text"])
         b1 = f1_dict.get((t1, t2))
         b2 = f2_dict.get((b1, t3))
         group_dict[b2].append(ex)
@@ -91,9 +78,7 @@ def group_data_by_t_final(examples, f1_dict, f2_dict, f3_dict):
     """
     group_dict = defaultdict(list)
     for ex in examples:
-        inp_tokens = parse_tokens(ex["input_text"])
-        assert len(inp_tokens) == 4
-        t1, t2, t3, t4 = inp_tokens
+        t1, t2, t3, t4 = parse_tokens(ex["input_text"])
         b1 = f1_dict.get((t1, t2))
         b2 = f2_dict.get((b1, t3))
         t_final = f3_dict.get((b2, t4))
@@ -106,9 +91,7 @@ def group_data_by_b2_e3(examples, f1_dict, f2_dict):
     """
     group_dict = defaultdict(list)
     for ex in examples:
-        inp_tokens = parse_tokens(ex["input_text"])
-        assert len(inp_tokens) == 4
-        t1, t2, t3, t4 = inp_tokens
+        t1, t2, t3, t4 = parse_tokens(ex["input_text"])
         b1 = f1_dict.get((t1, t2))
         b2 = f2_dict.get((b1, t3))
         group_dict[f"{t3},{b2}"].append(ex)
@@ -120,9 +103,7 @@ def group_data_by_b1_b2(examples, f1_dict, f2_dict):
     """
     group_dict = defaultdict(list)
     for ex in examples:
-        inp_tokens = parse_tokens(ex["input_text"])
-        assert len(inp_tokens) == 4
-        t1, t2, t3, _ = inp_tokens
+        t1, t2, t3, _ = parse_tokens(ex["input_text"])
         b1 = f1_dict.get((t1, t2))
         b2 = f2_dict.get((b1, t3))
         group_dict[f"{b1},{b2}"].append(ex)
@@ -189,7 +170,11 @@ def load_and_preprocess_data(f1_dict, f2_dict, f3_dict, test_path, idx):
     else:
         raise NotImplementedError
     
-    return grouped_id_train_data, grouped_id_test_data, grouped_ood_test_data
+    return {
+        'id_train': grouped_id_train_data,
+        'id_test': grouped_id_test_data,
+        'ood': grouped_ood_test_data
+    }
 
 
 ###############################################################################
@@ -320,27 +305,40 @@ def get_hidden_states_mlp(model, input_texts, layer_pos_pairs, tokenizer, device
 
 def process_data_group(model, data_group, layer_pos_pairs, tokenizer, device, mode, batch_size=8):
     """
-    For each group (bridge entity), processes examples in batches of size 'batch_size'
-    using batch inference.
+    Process a group of data instances in batches.
+    
+    Args:
+        model: GPT2 model
+        data_group: Dictionary of data instances grouped by target
+        layer_pos_pairs: List of (layer, position) tuples to extract
+        tokenizer: GPT2 tokenizer
+        device: Device to run model on
+        mode: 'post_mlp' or 'residual'
+        batch_size: Batch size for processing
+    
+    Returns:
+        Dictionary of processed results grouped by target
     """
     results = defaultdict(list)
     for bridge_entity, instances in tqdm(data_group.items(), desc="Processing instances"):
         for i in range(0, len(instances), batch_size):
             batch = instances[i:i+batch_size]
             input_texts = [ex['target_text'] for ex in batch]
-            if mode == "residual":
-                batch_hidden_states = get_hidden_states_residual(model, input_texts, layer_pos_pairs, tokenizer, device)
-            else:
-                batch_hidden_states = get_hidden_states_mlp(model, input_texts, layer_pos_pairs, tokenizer, device)
+            
+            # Get hidden states based on mode
+            batch_hidden_states = (get_hidden_states_mlp if mode == "mlp" else get_hidden_states_residual)(
+                model, input_texts, layer_pos_pairs, tokenizer, device
+            )
+            
+            # Store results
             for ex, hs in zip(batch, batch_hidden_states):
-                item = {
+                results[bridge_entity].append({
                     "input_text": ex['input_text'],
                     "target_text": ex['target_text'],
                     "identified_target": bridge_entity,
                     "type": ex.get('type'),
                     "hidden_states": hs
-                }
-                results[bridge_entity].append(item)
+                })
     return results
 
 
@@ -434,6 +432,34 @@ def deduplicate_grouped_data(grouped_data, atomic_idx):
     return output
 
 
+def parse_layer_pos_pairs(layer_pos_str):
+    """
+    Parse layer position pairs from string format.
+    Handles both tuple format like "(0,0),(1,1)" and special formats like "(logit,0)" or "(prob,0)".
+    
+    Args:
+        layer_pos_str: String containing layer position pairs
+        
+    Returns:
+        List of (layer, position) tuples
+    """
+    if "logit" in layer_pos_str or "prob" in layer_pos_str:
+        # Handle special formats like "(logit,0)" or "(prob,0)"
+        pos_match = re.search(r"\((logit|prob|\d+),(\d+)\)", layer_pos_str)
+        if pos_match:
+            layer_type = pos_match.group(1)
+            pos = int(pos_match.group(2))
+            return [(layer_type, pos)]
+        else:
+            raise ValueError(f"Invalid layer_pos_pairs format: {layer_pos_str}")
+    else:
+        # Handle tuple format like "(0,0),(1,1)"
+        try:
+            return eval(layer_pos_str)
+        except:
+            raise ValueError(f"Invalid layer_pos_pairs format: {layer_pos_str}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ckpt", required=True, help="Path to the model checkpoint")
@@ -443,11 +469,10 @@ def main():
     parser.add_argument("--device", type=str, default="cuda", help="Device to run the model on")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode for verbose output")
     parser.add_argument("--atomic_idx", required=True, type=int, choices=[1,2,3], help="Bottleneck function index among f1, f2, and f3 used for collapse evaluation")
-    parser.add_argument("--mode", required=True, help="Mode: 'post_mlp' or 'residual'")
+    parser.add_argument("--mode", required=True, choices=["post_mlp", "residual"], help="Mode: 'post_mlp' or 'residual'")
     parser.add_argument("--batch_size", type=int, default=4096, help="Batch size for processing")
-    
+    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing save directory if it exists")
     args = parser.parse_args()
-    assert args.mode in ["post_mlp", "residual"]
 
     setup_logging(args.debug)
 
@@ -481,102 +506,40 @@ def main():
     logging.info("Model and tokenizer loaded successfully")
     
     data_dir = os.path.join(data_dir, "data", dataset)
-    atomic_file_1 = os.path.join(data_dir, f"atomic_facts_f1.json")
-    atomic_file_2 = os.path.join(data_dir, f"atomic_facts_f2.json")
-    atomic_file_3 = os.path.join(data_dir, f"atomic_facts_f3.json")
-    f1_dict, f2_dict, f3_dict = load_atomic_facts_3hop(atomic_file_1, atomic_file_2, atomic_file_3)
 
-    grouped_id_train_data, grouped_id_test_data, grouped_ood_test_data = load_and_preprocess_data(
+    # (t_N1, t_N2) -> t_N3
+    f1_dict, f2_dict, f3_dict = load_atomic_facts_3hop(
+        os.path.join(data_dir, f"atomic_facts_f1.json"),
+        os.path.join(data_dir, f"atomic_facts_f2.json"),
+        os.path.join(data_dir, f"atomic_facts_f3.json")
+    )
+
+    grouped_data = load_and_preprocess_data(
         f1_dict, f2_dict, f3_dict, os.path.join(data_dir, "test.json"), idx=args.atomic_idx
     )
     
-    # 정규식을 사용한 파싱 로직
-    if "logit" in args.layer_pos_pairs or "prob" in args.layer_pos_pairs:
-        # 정규식으로 숫자 추출
-        pos_match = re.search(r"\((logit|prob|\d+),(\d+)\)", args.layer_pos_pairs)
-        if pos_match:
-            layer_type = pos_match.group(1)
-            pos = int(pos_match.group(2))
-            layer_pos_pairs = [(layer_type, pos)]
-        else:
-            layer_pos_pairs = [('logit', 0)]  # 기본값
-    else:
-        layer_pos_pairs = eval(args.layer_pos_pairs)
-    
+   # Process data and save results
+    results = {}
+    layer_pos_pairs = parse_layer_pos_pairs(args.layer_pos_pairs)
     logging.info(f"Layer position pairs: {layer_pos_pairs}")
     
-    logging.info(f"ID train targets: {len(grouped_id_train_data)}")
-    logging.info(f"ID test targets: {len(grouped_id_test_data)}")
-    logging.info(f"OOD test targets: {len(grouped_ood_test_data)}")
-    
     torch.manual_seed(0)
+    for data_type, data_group in grouped_data.items():
+        results[data_type] = process_data_group(
+            model, data_group, layer_pos_pairs, tokenizer, device, args.mode, args.batch_size
+        )
     
-    logging.info("Processing ID train group with batch processing...")
-    id_train_results = process_data_group(model, grouped_id_train_data, layer_pos_pairs, tokenizer, device, args.mode, batch_size=args.batch_size)
+    # Deduplicate and save results
+    save_dir = os.path.join(args.save_dir, args.mode, f"{dataset}",
+                           f"f{args.atomic_idx}", str(layer_pos_pairs[0]).replace("'", "").replace(" ", ""),
+                           step)
     
-    logging.info("Processing ID test group with batch processing...")
-    id_test_results = process_data_group(model, grouped_id_test_data, layer_pos_pairs, tokenizer, device, args.mode, batch_size=args.batch_size)
-    
-    logging.info("Processing OOD test group with batch processing...")
-    ood_test_results = process_data_group(model, grouped_ood_test_data, layer_pos_pairs, tokenizer, device, args.mode, batch_size=args.batch_size)
-    
-    # Perform deduplication
-    # logging.info("Deduplicating ID train results...")
-    # id_train_dedup, id_train_stats = deduplicate_vectors(id_train_results)
-    
-    # logging.info("Deduplicating ID test results...")
-    # id_test_dedup, id_test_stats = deduplicate_vectors(id_test_results)
-    
-    # logging.info("Deduplicating OOD test results...")
-    # ood_dedup, ood_stats = deduplicate_vectors(ood_test_results)
-    
-    logging.info("Deduplicating ID train results...")
-    id_train_dedup = deduplicate_grouped_data(id_train_results, args.atomic_idx)
-    
-    logging.info("Deduplicating ID test results...")
-    id_test_dedup = deduplicate_grouped_data(id_test_results, args.atomic_idx)
-    
-    logging.info("Deduplicating OOD test results...")
-    ood_dedup = deduplicate_grouped_data(ood_test_results, args.atomic_idx)
-    
-    # 작은따옴표를 제거한 경로 생성
-    layer_pos_str = str(layer_pos_pairs[0]).replace("'", "").replace(" ", "")
-    save_dir = os.path.join(args.save_dir, args.mode, dataset, f"f{args.atomic_idx}", layer_pos_str, step)
-    if os.path.exists(save_dir):
-        logging.info(f"{save_dir} already exists!")
-    else:
-        os.makedirs(save_dir, exist_ok=True)
+    os.makedirs(save_dir, exist_ok=True)
 
-    id_train_save = os.path.join(save_dir, "id_train_dedup.json")
-    with open(id_train_save, "w") as f:
-        json.dump(id_train_dedup, f)
-    logging.info(f"Saved deduplicated ID train results to {id_train_save}")
-
-    id_test_save = os.path.join(save_dir, "id_test_dedup.json")
-    with open(id_test_save, "w") as f:
-        json.dump(id_test_dedup, f)
-    logging.info(f"Saved deduplicated ID test results to {id_test_save}")
-    
-    ood_save = os.path.join(save_dir, "ood_dedup.json")
-    with open(ood_save, "w") as f:
-        json.dump(ood_dedup, f)
-    logging.info(f"Saved deduplicated OOD test results to {ood_save}")
-    
-    # id_train_stats_path = os.path.join(save_dir, "dedup_stats_id_train.json")
-    # with open(id_train_stats_path, "w") as f:
-    #     json.dump(id_train_stats, f)
-    
-    # id_test_stats_path = os.path.join(save_dir, "dedup_stats_id_test.json")
-    # with open(id_test_stats_path, "w") as f:
-    #     json.dump(id_test_stats, f)
-    
-    # ood_stats_path = os.path.join(save_dir, "dedup_stats_ood.json")
-    # with open(ood_stats_path, "w") as f:
-    #     json.dump(ood_stats, f)
-
-    logging.info("Finished all. Final deduplication stats:")
-    logging.info(f"ID train: {len(id_train_dedup)} groups, ID test: {len(id_test_dedup)} groups, OOD: {len(ood_dedup)} groups")
-    logging.info("Done.")
+    for data_type, data_results in results.items():
+        dedup_results = deduplicate_grouped_data(data_results, args.atomic_idx)
+        with open(os.path.join(save_dir, f"{data_type}_dedup.json"), "w") as f:
+            json.dump(dedup_results, f)
 
 if __name__ == "__main__":
     main()

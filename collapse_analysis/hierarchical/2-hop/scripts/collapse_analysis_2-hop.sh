@@ -1,7 +1,7 @@
 #!/bin/bash
 
 MODE=residual
-CONFIG_FILES=("analysis_list_paper.json")
+CONFIG_FILES=("analysis_list_coverage.json")
 
 # JSON 파일을 읽어서 jq로 파싱하는 함수
 get_steps() {
@@ -25,17 +25,24 @@ process_model() {
     echo "=== Using Config File: $CONFIG_FILE ==="
     echo "Steps to analyze: $(get_steps "$MODEL_DIR" "$CONFIG_FILE")"
     echo "Include final checkpoint: $(get_include_final "$MODEL_DIR" "$CONFIG_FILE")"
+
+    # CONFIG_FILE에 따라 다른 POS_RANGE 설정
+    if [ "$CONFIG_FILE" = "analysis_list_cot_paper.json" ]; then
+        POS_RANGE=(0 1 2 3)
+    else
+        POS_RANGE=(0 1 2)
+    fi
     
-    for POS in 1 2
+    for POS in "${POS_RANGE[@]}"
     do
         for LAYER in 1 2 3 4 5 6 7 8 logit prob
         do
-            for ATOMIC_IDX in 1 2
+            for ATOMIC_IDX in 4
             do
                 for STEP in $(get_steps "$MODEL_DIR" "$CONFIG_FILE")
                 do
                     CHECKPOINT_DIR="/mnt/nas/hoyeon/GrokkedTransformer/trained_checkpoints/${MODEL_DIR}/checkpoint-${STEP}"
-                    CUDA_VISIBLE_DEVICES=2 python ../collapse_analysis_2-hop.py \
+                    CUDA_VISIBLE_DEVICES=3 python ../collapse_analysis_2-hop.py \
                         --ckpt ${CHECKPOINT_DIR}/ \
                         --base_dir /mnt/sda/hoyeon/GrokkedTransformer \
                         --layer_pos_pairs "[(${LAYER},${POS})]" \
@@ -46,7 +53,7 @@ process_model() {
 
                 if [ "$(get_include_final "$MODEL_DIR" "$CONFIG_FILE")" = "true" ]; then
                     CHECKPOINT_DIR="/mnt/nas/hoyeon/GrokkedTransformer/trained_checkpoints/${MODEL_DIR}/final_checkpoint"
-                    CUDA_VISIBLE_DEVICES=2 python ../collapse_analysis_2-hop.py \
+                    CUDA_VISIBLE_DEVICES=3 python ../collapse_analysis_2-hop.py \
                         --ckpt ${CHECKPOINT_DIR}/ \
                         --base_dir /mnt/sda/hoyeon/GrokkedTransformer \
                         --layer_pos_pairs "[(${LAYER},${POS})]" \
@@ -54,8 +61,8 @@ process_model() {
                         --atomic_idx ${ATOMIC_IDX} \
                         --mode ${MODE} &
                 fi
+                wait
             done
-            wait
         done
     done
     echo "=== Finished processing $MODEL_DIR ==="

@@ -5,7 +5,7 @@ set -e
 
 # 현재 스크립트의 디렉토리 경로
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PARENT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
+PARENT_DIR="$(dirname "$(dirname "$(dirname "$SCRIPT_DIR")")")"
 
 MODE=residual
 CONFIG_FILES=("analysis_list_paper.json")
