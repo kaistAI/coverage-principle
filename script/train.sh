@@ -34,7 +34,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node
 --train_batch_size 4096 \
 --eval_batch_size 4096 \
 --gradient_accumulation_steps 1 \
---learning_rate 1e-4 \
+--learning_rate 8e-4 \
 --max_seq_length 10 \
 --max_length 10 \
 --block_size 10 \

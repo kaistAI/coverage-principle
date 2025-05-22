@@ -101,7 +101,7 @@ bash script/train.sh twohop.50.10000.diff-f12.inf 0.1 8 12 0 42
 **Training configuration**
 
 * Architecture: GPT-2 with specified layers/heads
-* Learning rate: `1e-4`
+* Learning rate: `8e-4`
 * Batch size: `4096`
 * Max steps: `62500`
 * Distributed training on 4 GPUs
