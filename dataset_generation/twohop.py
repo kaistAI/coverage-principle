@@ -347,7 +347,7 @@ def main():
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     save_dir = os.path.join(
         base_dir, 
-        "data_fixed",
+        "data",
         f"twohop.{args.num_tokens}.{args.max_train_data_num}.{'same-f12' if args.same_f12 else 'diff-f12'}.{mode_str}"
     )
     os.makedirs(save_dir, exist_ok=True)

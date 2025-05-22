@@ -270,7 +270,7 @@ def main():
 
     # ------------------------------- Save -----------------------------------
     save_dir = os.path.join(
-        "data_fixed",
+        "data",
         f"fivehop.{args.num_tokens}.{args.max_train_data_num}.cot",
     )
     os.makedirs(save_dir, exist_ok=True)

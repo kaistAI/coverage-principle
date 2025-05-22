@@ -376,7 +376,7 @@ def main():
     mode_str = "cot" if args.cot else "inf"
     save_dir = os.path.join(
         base_dir,
-        "data_fixed",
+        "data",
         f"nontree.{args.num_tokens}.{args.max_train_data_num}.{'same-f12' if args.same_f12 else 'diff-f12'}.{mode_str}"
     )
     os.makedirs(save_dir, exist_ok=True)
