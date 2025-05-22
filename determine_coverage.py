@@ -99,8 +99,8 @@ def build_equiv_classes_for_subset(train_map: Dict[Tuple[int, int, int], int],
     contradictions = set()
     
     for (subseq1, compl_map1), (subseq2, compl_map2) in combinations(behavior.items(), 2):
-        if subseq1 == subseq2:  # Skip duplicates
-            continue
+        # if subseq1 >= subseq2:
+        #     continue
             
         # Find shared complements
         shared_complements = set(compl_map1) & set(compl_map2)
@@ -108,11 +108,11 @@ def build_equiv_classes_for_subset(train_map: Dict[Tuple[int, int, int], int],
         # Check for contradictions
         for comp in shared_complements:
             if compl_map1[comp] != compl_map2[comp]:
-                contradictions.add((subseq1, subseq2))
+                contradictions.add(tuple(sorted([subseq1, subseq2])))
                 break
         
         # If no contradictions, count matching evidence
-        if (subseq1, subseq2) not in contradictions and shared_complements:
+        if tuple(sorted([subseq1, subseq2])) not in contradictions and shared_complements:
             matching_evidence = sum(1 for comp in shared_complements 
                                   if compl_map1[comp] == compl_map2[comp])
             pair_evidence[(subseq1, subseq2)] = matching_evidence
@@ -121,7 +121,7 @@ def build_equiv_classes_for_subset(train_map: Dict[Tuple[int, int, int], int],
     uf = UnionFind()
     
     for (subseq1, subseq2), evidence_count in pair_evidence.items():
-        if evidence_count >= min_evidence and (subseq1, subseq2) not in contradictions:
+        if evidence_count >= min_evidence and tuple(sorted([subseq1, subseq2])) not in contradictions:
             uf.union(subseq1, subseq2)
     
     # Initialize all subsequences in the Union-Find structure
@@ -134,9 +134,10 @@ def build_equiv_classes_for_subset(train_map: Dict[Tuple[int, int, int], int],
 
 
 def build_all_equiv_classes(train_map: Dict[Tuple[int, int, int], int], 
-                           min_evidence: int = 1) -> Dict[FrozenSet[int], UnionFind]:
+                           min_evidence: int = 1,
+                           ground_truth: bool = False) -> Dict[FrozenSet[int], UnionFind]:
     """Build equivalence classes for all possible subsequences."""
-    all_subsets = powerset(range(3))  # All non-trivial subsets of {0,1,2}
+    all_subsets = powerset(range(3)) if not ground_truth else [frozenset((0,1))]  # All non-trivial subsets of {0,1,2}
     return {subset: build_equiv_classes_for_subset(train_map, subset, min_evidence) 
             for subset in all_subsets}
 
@@ -145,34 +146,42 @@ def build_all_equiv_classes(train_map: Dict[Tuple[int, int, int], int],
 # Substitution graph & coverage
 ###############################################################################
 
-def build_full_subst_graph(all_triples: List[Tuple[int, int, int]], 
-                                  triple2t: Dict[Tuple[int, int, int], int],
-                                  equiv_classes: Dict[FrozenSet[int], UnionFind]) -> nx.Graph:
-    """Build substitution graph with parallel edge computation."""
+def build_full_subst_graph(all_triples, triple2t, equiv_classes):
+    """Build substitution graph using the bucketing approach for better alignment with the coverage principle."""
     G = nx.Graph()
     for tr in all_triples:
         G.add_node(tr)
     
-    # Create batches of triple pairs for parallel processing
-    BATCH_SIZE = 100000  # Adjust based on your memory constraints
-    triple_pairs = list(combinations(all_triples, 2))
-    num_batches = (len(triple_pairs) + BATCH_SIZE - 1) // BATCH_SIZE
-    batches = [triple_pairs[i*BATCH_SIZE:(i+1)*BATCH_SIZE] for i in range(num_batches)]
+    # Create buckets based on equivalence classes
+    buckets = defaultdict(list)
     
-    # Create partial function with fixed parameters
-    process_batch = partial(find_edges_in_batch, 
-                          triple2t=triple2t, 
-                          equiv_classes=equiv_classes)
+    for tr in all_triples:
+        h1, h2, h3 = tr
+        t = triple2t[tr]
+        
+        # For each subset of indices we have equivalence classes for
+        for subset_indices in equiv_classes:
+            # Extract the subsequence for this subset
+            subseq = extract_subsequence(tr, subset_indices)
+            
+            # Extract the complement indices and values
+            complement_indices = frozenset(range(3)) - subset_indices
+            complement = extract_subsequence(tr, complement_indices)
+            
+            # Get the equivalence class for this subsequence
+            equiv_class = equiv_classes[subset_indices].find(subseq)
+            
+            # Add to bucket: (equiv_class, complement, target)
+            buckets[(equiv_class, complement, t)].append(tr)
     
-    # Process batches in parallel
-    with mp.Pool(processes=max(1, 16)) as pool:
-        edge_batches = list(tqdm(pool.map(process_batch, batches)))
+    # Connect all pairs in each bucket
+    edge_count = 0
+    for triples in buckets.values():
+        for a, b in combinations(triples, 2):
+            G.add_edge(a, b)
+            edge_count += 1
     
-    # Add all edges to the graph
-    for edges in edge_batches:
-        G.add_edges_from(edges)
-    
-    logging.info(f"Parallel substitution graph: |V|={G.number_of_nodes()}, |E|={G.number_of_edges()}")
+    logging.info(f"Substitution graph: |V|={G.number_of_nodes()}, |E|={edge_count}")
     return G
 
 def find_edges_in_batch(batch, triple2t, equiv_classes):
@@ -225,6 +234,8 @@ def main():
                    help="minimum evidence for equivalence classes")
     ap.add_argument("--k_sweep", action="store_true",
                    help="Run multiple min_evidence values (1-8) and report coverage")
+    ap.add_argument("--ground_truth", action="store_true",
+                   help="Run multiple min_evidence values (1-8) and report coverage")
     args = ap.parse_args()
 
     setup_logging(args.debug)
@@ -256,6 +267,11 @@ def main():
     if args.k_sweep:
         k_sweep_results = {}
         
+        # For tracking coverage of each example at each k
+        # Map from test example index to highest k where it's covered
+        type0_indices = [i for i, item in enumerate(test) if item.get("type") == "type_0"]
+        coverage_by_example = {i: 0 for i in type0_indices}  # Default to uncovered
+        
         # Cache the behavior maps for efficiency
         logging.info("Caching behavior maps for all subsets (will speed up k-sweep)...")
         behavior_maps = {}
@@ -277,13 +293,13 @@ def main():
             return behavior_maps[subset_indices]
         
         # Pre-compute all behavior maps
-        all_subsets = powerset(range(3))
+        all_subsets = powerset(range(3)) if not args.ground_truth else [frozenset((0,1))]
         for subset in all_subsets:
             _ = get_behavior_map(subset)
         
         # Run the k-sweep
         from tqdm import tqdm
-        k_values = range(1, 9)  # k from 1 to 8
+        k_values = range(1, 21)  # k from 1 to 8
         
         for k in tqdm(k_values, desc="K-sweep progress"):
             logging.info(f"Running coverage analysis with min_evidence = {k}")
@@ -307,18 +323,18 @@ def main():
                     # Check for contradictions
                     for comp in shared_complements:
                         if compl_map1[comp] != compl_map2[comp]:
-                            contradictions.add((subseq1, subseq2))
+                            contradictions.add(tuple(sorted([subseq1, subseq2])))
                             break
                     
                     # If no contradictions, count matching evidence
-                    if (subseq1, subseq2) not in contradictions and shared_complements:
+                    if tuple(sorted([subseq1, subseq2])) not in contradictions and shared_complements:
                         matching_evidence = sum(1 for comp in shared_complements 
                                             if compl_map1[comp] == compl_map2[comp])
                         pair_evidence[(subseq1, subseq2)] = matching_evidence
                 
                 # Union subsequences with sufficient evidence
                 for (subseq1, subseq2), evidence_count in pair_evidence.items():
-                    if evidence_count >= k and (subseq1, subseq2) not in contradictions:
+                    if evidence_count >= k and tuple(sorted([subseq1, subseq2])) not in contradictions:
                         uf.union(subseq1, subseq2)
                 
                 # Initialize all subsequences in the UnionFind structure
@@ -331,10 +347,16 @@ def main():
             G = build_full_subst_graph(train_triples + test_triples, triple2t, equiv_classes)
             covered = compute_coverage(G, train_triples)
             
-            # Count coverage for type_0
-            type0_total = sum(1 for it in test if it.get("type") == "type_0")
-            type0_covered = sum(1 for it in test if it.get("type") == "type_0" 
-                              and parse(it["input_text"]) in covered)
+            # Count coverage for type_0 and track individual test examples
+            type0_total = 0
+            type0_covered = 0
+            
+            for i in type0_indices:
+                type0_total += 1
+                if parse(test[i]["input_text"]) in covered:
+                    type0_covered += 1
+                    # Update this example's coverage threshold to current k
+                    coverage_by_example[i] = k
             
             # Calculate percentage
             coverage_pct = (type0_covered / type0_total * 100) if type0_total > 0 else 0
@@ -344,12 +366,38 @@ def main():
         
         # Write results to JSON file
         os.makedirs("k_sweep_results", exist_ok=True)
-        k_sweep_file = os.path.join("k_sweep_results", f"{args.data_dir.split('/')[-2]}.json")
+        k_sweep_file = os.path.join("k_sweep_results", f"{args.data_dir.split('/')[-2]}{'_ground-truth' if args.ground_truth else ''}.json")
         with open(k_sweep_file, "w", encoding="utf-8") as f:
             json.dump(k_sweep_results, f, indent=2)
         
         logging.info(f"K-sweep results written to {k_sweep_file}")
-
+        
+        # Create modified test data with coverage thresholds
+        new_test_data = test.copy()
+        coverage_threshold_counts = {i: 0 for i in range(9)}  # Count examples for each threshold
+        
+        # Create entries with coverage threshold types
+        for i in type0_indices:
+            threshold = coverage_by_example[i]
+            coverage_threshold_counts[threshold] += 1
+            
+            # Create a duplicate entry with the coverage threshold type
+            duplicate_entry = test[i].copy()
+            duplicate_entry["type"] = f"covered_{threshold}"
+            new_test_data.append(duplicate_entry)
+        
+        # Write the modified test file
+        threshold_test_file = os.path.join(args.data_dir, f"test_annotated{'_ground-truth' if args.ground_truth else ''}.json")
+        with open(threshold_test_file, "w", encoding="utf-8") as f:
+            json.dump(new_test_data, f, indent=2)
+        
+        # Log threshold distribution
+        logging.info("Coverage threshold distribution:")
+        for threshold, count in coverage_threshold_counts.items():
+            logging.info(f"  covered_{threshold}: {count} examples")
+        
+        logging.info(f"Enhanced test data with coverage thresholds written to {threshold_test_file}")
+    
 
 
 
@@ -358,7 +406,8 @@ def main():
     else:
         # Build equivalence classes for all possible subsequences
         equiv_classes = build_all_equiv_classes({tr: triple2t[tr] for tr in train_triples}, 
-                                            min_evidence=args.min_evidence)
+                                            min_evidence=args.min_evidence,
+                                            ground_truth=args.ground_truth)
         
         # Build full substitution graph
         G = build_full_subst_graph(train_triples + test_triples, triple2t, equiv_classes)
@@ -384,10 +433,11 @@ def main():
             pct = 100.0 * hits[typ] / totals[typ]
             logging.info(f"Coverage [{typ}] : {hits[typ]} / {totals[typ]}  ({pct:.2f}%)")
 
-        # Write annotated test file
-        with open(os.path.join(args.data_dir, "test_annotated_full.json"), "w", encoding="utf-8") as f:
+        # Write annotated test file with appropriate suffix
+        annotated_file = os.path.join(args.data_dir, f"test_annotated{'_ground-truth' if args.ground_truth else '_full'}.json")
+        with open(annotated_file, "w", encoding="utf-8") as f:
             json.dump(test, f, indent=2)
-        logging.info("test_annotated_full.json written")
+        logging.info(f"{annotated_file} written")
 
         # Visualization logic
         if args.visualise:
@@ -620,51 +670,6 @@ def main():
             logging.info(f"Writing HTML graph to {plot_save_dir}...")
             fig.write_html(plot_save_dir)
             logging.info(f"HTML visualization saved → {plot_save_dir}")
-            
-            # Create a simplified version for very large graphs
-            # if len(G_viz.nodes()) > 5000:
-            #     logging.info("Creating simplified version for large graph...")
-            #     simple_plot_save_dir = os.path.join(
-            #         'coverage_visualization', 
-            #         f"{args.data_dir.split('/')[-2]}_full_min{args.min_evidence}_simple.html"
-            #     )
-                
-            #     # Simplified figure with fewer hover effects and thinner lines
-            #     simple_fig = go.Figure(
-            #         data=[
-            #             go.Scatter(
-            #                 x=edge_x, y=edge_y,
-            #                 mode="lines",
-            #                 line=dict(width=0.2, color="#dddddd"),
-            #                 hoverinfo="skip",
-            #                 showlegend=False,
-            #             )
-            #         ] + [
-            #             go.Scatter(
-            #                 x=xs, y=ys,
-            #                 mode="markers",
-            #                 name=label,
-            #                 marker=dict(
-            #                     symbol=STYLE[label]["symbol"],
-            #                     size=STYLE[label]["size"] * 0.8,
-            #                     color=STYLE[label]["color"],
-            #                 ),
-            #                 hoverinfo="none",  # Disable hover for performance
-            #             )
-            #             for label, (xs, ys, _) in buckets.items()
-            #             if xs
-            #         ],
-            #         layout=go.Layout(
-            #             title=f"Simplified View • {len(G_viz.nodes())} nodes, {len(G_viz.edges())} edges",
-            #             hovermode=False,
-            #             margin=dict(l=20, r=20, t=60, b=20),
-            #             xaxis=dict(visible=False), 
-            #             yaxis=dict(visible=False),
-            #         ),
-            #     )
-                
-            #     simple_fig.write_html(simple_plot_save_dir)
-            #     logging.info(f"Simplified HTML visualization saved → {simple_plot_save_dir}")
 
 
 if __name__ == "__main__":

@@ -99,7 +99,7 @@ def calculate_between_group_similarity_gpu(group_means):
     if M < 2:
         return None, []
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    X = torch.tensor(group_means, dtype=torch.float32, device=device)
+    X = torch.tensor(np.array(group_means), dtype=torch.float32, device=device)
     X = F.normalize(X, p=2, dim=1)
     sim_matrix = torch.matmul(X, X.t())
     idx = torch.triu_indices(M, M, offset=1)
@@ -428,8 +428,8 @@ def main():
                         help="Which method => pca or tsne")
     parser.add_argument('--pca_scope', type=str, default="global", choices=["global","local"],
                         help="Perform PCA/t-SNE globally or only local sample bridging groups")
-    parser.add_argument('--pca_m', type=int, default=5)
-    parser.add_argument('--pca_n', type=int, default=20)
+    parser.add_argument('--pca_m', type=int, default=3)
+    parser.add_argument('--pca_n', type=int, default=3)
     
     args = parser.parse_args()
     
@@ -621,105 +621,105 @@ def main():
     print("\nCreating plots...")
 
     # ID Train
-    plot_comparison_distributions(
-        id_train_within_sims,
-        id_train_between_sims,
-        ['Within-group', 'Between-group(centroids)'],
-        f'ID Train Similarity Distributions (Layer {target_layer})',
-        output_dir / f'id_train_similarities_layer{target_layer}.png'
-    )
-    # Also plot the new "between-group(all vectors)" distribution if it exists
-    if id_train_between_allvec_sims:
-        plot_comparison_distributions(
-            id_train_within_sims,
-            id_train_between_allvec_sims,
-            ['Within-group', 'Between-group(allvec)'],
-            f'ID Train Within vs. Between(AllVec) (Layer {target_layer})',
-            output_dir / f'id_train_within_vs_betweenall_layer{target_layer}.png'
-        )
-    if id_train_all_sims and len(id_train_all_sims)>0:
-        plot_similarity_distribution(
-            id_train_all_sims,
-            f'ID Train All-Vector Similarities (Layer {target_layer})',
-            output_dir / f'id_train_all_similarities_layer{target_layer}.png',
-            color='green'
-        )
+    # plot_comparison_distributions(
+    #     id_train_within_sims,
+    #     id_train_between_sims,
+    #     ['Within-group', 'Between-group(centroids)'],
+    #     f'ID Train Similarity Distributions (Layer {target_layer})',
+    #     output_dir / f'id_train_similarities_layer{target_layer}.png'
+    # )
+    # # Also plot the new "between-group(all vectors)" distribution if it exists
+    # if id_train_between_allvec_sims:
+    #     plot_comparison_distributions(
+    #         id_train_within_sims,
+    #         id_train_between_allvec_sims,
+    #         ['Within-group', 'Between-group(allvec)'],
+    #         f'ID Train Within vs. Between(AllVec) (Layer {target_layer})',
+    #         output_dir / f'id_train_within_vs_betweenall_layer{target_layer}.png'
+    #     )
+    # if id_train_all_sims and len(id_train_all_sims)>0:
+    #     plot_similarity_distribution(
+    #         id_train_all_sims,
+    #         f'ID Train All-Vector Similarities (Layer {target_layer})',
+    #         output_dir / f'id_train_all_similarities_layer{target_layer}.png',
+    #         color='green'
+    #     )
 
     # ID Test
-    plot_comparison_distributions(
-        id_test_within_sims,
-        id_test_between_sims,
-        ['Within-group', 'Between-group(centroids)'],
-        f'ID Test Similarities (Layer {target_layer})',
-        output_dir / f'id_test_similarities_layer{target_layer}.png'
-    )
-    if id_test_between_allvec_sims:
-        plot_comparison_distributions(
-            id_test_within_sims,
-            id_test_between_allvec_sims,
-            ['Within-group', 'Between-group(allvec)'],
-            f'ID Test Within vs. Between(AllVec) (Layer {target_layer})',
-            output_dir / f'id_test_within_vs_betweenall_layer{target_layer}.png'
-        )
-    if id_test_all_sims and len(id_test_all_sims)>0:
-        plot_similarity_distribution(
-            id_test_all_sims,
-            f'ID Test All-Vector Similarities (Layer {target_layer})',
-            output_dir / f'id_test_all_similarities_layer{target_layer}.png',
-            color='green'
-        )
+    # plot_comparison_distributions(
+    #     id_test_within_sims,
+    #     id_test_between_sims,
+    #     ['Within-group', 'Between-group(centroids)'],
+    #     f'ID Test Similarities (Layer {target_layer})',
+    #     output_dir / f'id_test_similarities_layer{target_layer}.png'
+    # )
+    # if id_test_between_allvec_sims:
+    #     plot_comparison_distributions(
+    #         id_test_within_sims,
+    #         id_test_between_allvec_sims,
+    #         ['Within-group', 'Between-group(allvec)'],
+    #         f'ID Test Within vs. Between(AllVec) (Layer {target_layer})',
+    #         output_dir / f'id_test_within_vs_betweenall_layer{target_layer}.png'
+    #     )
+    # if id_test_all_sims and len(id_test_all_sims)>0:
+    #     plot_similarity_distribution(
+    #         id_test_all_sims,
+    #         f'ID Test All-Vector Similarities (Layer {target_layer})',
+    #         output_dir / f'id_test_all_similarities_layer{target_layer}.png',
+    #         color='green'
+    #     )
 
-    # OOD
-    plot_comparison_distributions(
-        ood_within_sims,
-        ood_between_sims,
-        ['Within-group', 'Between-group(centroids)'],
-        f'OOD Similarities (Layer {target_layer})',
-        output_dir / f'ood_similarities_layer{target_layer}.png'
-    )
-    if ood_between_allvec_sims:
-        plot_comparison_distributions(
-            ood_within_sims,
-            ood_between_allvec_sims,
-            ['Within-group', 'Between-group(allvec)'],
-            f'OOD Within vs. Between(AllVec) (Layer {target_layer})',
-            output_dir / f'ood_within_vs_betweenall_layer{target_layer}.png'
-        )
-    if ood_all_sims and len(ood_all_sims)>0:
-        plot_similarity_distribution(
-            ood_all_sims,
-            f'OOD All-Vector Similarities (Layer {target_layer})',
-            output_dir / f'ood_all_similarities_layer{target_layer}.png',
-            color='green'
-        )
+    # # OOD
+    # plot_comparison_distributions(
+    #     ood_within_sims,
+    #     ood_between_sims,
+    #     ['Within-group', 'Between-group(centroids)'],
+    #     f'OOD Similarities (Layer {target_layer})',
+    #     output_dir / f'ood_similarities_layer{target_layer}.png'
+    # )
+    # if ood_between_allvec_sims:
+    #     plot_comparison_distributions(
+    #         ood_within_sims,
+    #         ood_between_allvec_sims,
+    #         ['Within-group', 'Between-group(allvec)'],
+    #         f'OOD Within vs. Between(AllVec) (Layer {target_layer})',
+    #         output_dir / f'ood_within_vs_betweenall_layer{target_layer}.png'
+    #     )
+    # if ood_all_sims and len(ood_all_sims)>0:
+    #     plot_similarity_distribution(
+    #         ood_all_sims,
+    #         f'OOD All-Vector Similarities (Layer {target_layer})',
+    #         output_dir / f'ood_all_similarities_layer{target_layer}.png',
+    #         color='green'
+    #     )
 
-    # Additional comparisons
-    plot_similarity_distribution(
-        id_train_ood_s,
-        f'ID_Train vs OOD Mean Similarities (Layer {target_layer})',
-        output_dir / f'id_train_ood_mean_similarities_layer{target_layer}.png',
-        color='purple'
-    )
-    plot_similarity_distribution(
-        id_test_ood_s,
-        f'ID_Test vs OOD Mean Similarities (Layer {target_layer})',
-        output_dir / f'id_test_ood_mean_similarities_layer{target_layer}.png',
-        color='purple'
-    )
-    plot_comparison_distributions(
-        id_train_within_sims,
-        ood_within_sims,
-        ['ID_Train Within-group', 'OOD Within-group'],
-        f'ID_Train vs OOD Within-Group (Layer {target_layer})',
-        output_dir / f'id_train_vs_ood_within_group_layer{target_layer}.png'
-    )
-    plot_comparison_distributions(
-        id_test_within_sims,
-        ood_within_sims,
-        ['ID_Test Within-group', 'OOD Within-group'],
-        f'ID_Test vs OOD Within-Group (Layer {target_layer})',
-        output_dir / f'id_test_vs_ood_within_group_layer{target_layer}.png'
-    )
+    # # Additional comparisons
+    # plot_similarity_distribution(
+    #     id_train_ood_s,
+    #     f'ID_Train vs OOD Mean Similarities (Layer {target_layer})',
+    #     output_dir / f'id_train_ood_mean_similarities_layer{target_layer}.png',
+    #     color='purple'
+    # )
+    # plot_similarity_distribution(
+    #     id_test_ood_s,
+    #     f'ID_Test vs OOD Mean Similarities (Layer {target_layer})',
+    #     output_dir / f'id_test_ood_mean_similarities_layer{target_layer}.png',
+    #     color='purple'
+    # )
+    # plot_comparison_distributions(
+    #     id_train_within_sims,
+    #     ood_within_sims,
+    #     ['ID_Train Within-group', 'OOD Within-group'],
+    #     f'ID_Train vs OOD Within-Group (Layer {target_layer})',
+    #     output_dir / f'id_train_vs_ood_within_group_layer{target_layer}.png'
+    # )
+    # plot_comparison_distributions(
+    #     id_test_within_sims,
+    #     ood_within_sims,
+    #     ['ID_Test Within-group', 'OOD Within-group'],
+    #     f'ID_Test vs OOD Within-Group (Layer {target_layer})',
+    #     output_dir / f'id_test_vs_ood_within_group_layer{target_layer}.png'
+    # )
 
     print("Finished all computations and plots!")
 

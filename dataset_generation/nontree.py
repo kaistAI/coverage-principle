@@ -273,7 +273,7 @@ def main():
     coverage_reservoirs = defaultdict(list)
     coverage_seen_count = defaultdict(int)
 
-    skip_p = 0.2
+    skip_p = 0.0
 
     for (h1_idx, h2_idx), b1_idx in f1_dict.items():
         if random.random() > (1 - skip_p):

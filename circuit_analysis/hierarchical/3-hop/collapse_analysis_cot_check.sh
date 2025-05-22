@@ -14,7 +14,7 @@ do
                 CUDA_VISIBLE_DEVICES=1 python collapse_analysis_3-hop.py \
                     --ckpt ${CHECKPOINT_DIR}/ \
                     --layer_pos_pairs "[(${LAYER},${POS})]" \
-                    --save_dir /mnt/nas/jinho/GrokkedTransformer/collapse_analysis/3-hop/ \
+                    --save_dir /mnt/nas/jinho/GrokkedTransformer/circuit_analysis/3-hop/ \
                     --atomic_idx ${ATOMIC_IDX} \
                     --mode ${MODE}
             done
@@ -34,7 +34,7 @@ do
                 CUDA_VISIBLE_DEVICES=1 python collapse_analysis_3-hop.py \
                     --ckpt ${CHECKPOINT_DIR}/ \
                     --layer_pos_pairs "[(${LAYER},${POS})]" \
-                    --save_dir /mnt/nas/jinho/GrokkedTransformer/collapse_analysis/3-hop/ \
+                    --save_dir /mnt/nas/jinho/GrokkedTransformer/circuit_analysis/3-hop/ \
                     --atomic_idx ${ATOMIC_IDX} \
                     --mode ${MODE}
             done

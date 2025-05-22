@@ -45,7 +45,7 @@ process_model() {
         POS_RANGE=(0 1 2)
         ATOMIC_IDX_RANGE=(1 2)
     fi
-    DEDUP_DIR="/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/2-hop/${MODE}/${SHORT_MODEL_DIR}"
+    DEDUP_DIR="/mnt/nas/jinho/GrokkedTransformer/circuit_analysis/2-hop/${MODE}/${SHORT_MODEL_DIR}"
     DATASET="${SHORT_MODEL_DIR}"
     
     for POS in "${POS_RANGE[@]}"
@@ -65,7 +65,7 @@ process_model() {
                         --id_train_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/id_train_dedup.json" \
                         --id_test_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/id_test_dedup.json" \
                         --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/ood_dedup.json" \
-                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/step${STEP}" \
+                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/circuit_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/step${STEP}" \
                         --save_plots \
                         --reduce_method pca \
                         --pca_scope global \
@@ -75,7 +75,7 @@ process_model() {
                         --id_train_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/id_train_dedup.json" \
                         --id_test_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/id_test_low_cutoff_dedup.json" \
                         --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/ood_dedup.json" \
-                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/step${STEP}/low_cutoff" \
+                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/circuit_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/step${STEP}/low_cutoff" \
                         --save_plots \
                         --reduce_method pca \
                         --pca_scope global \
@@ -85,7 +85,7 @@ process_model() {
                         --id_train_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/id_train_dedup.json" \
                         --id_test_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/id_test_high_cutoff_dedup.json" \
                         --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/ood_dedup.json" \
-                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/step${STEP}/high_cutoff" \
+                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/circuit_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/step${STEP}/high_cutoff" \
                         --save_plots \
                         --reduce_method pca \
                         --pca_scope global \
@@ -102,7 +102,7 @@ process_model() {
                         --id_train_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/id_train_dedup.json" \
                         --id_test_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/id_test_dedup.json" \
                         --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/ood_dedup.json" \
-                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/stepfinal_checkpoint" \
+                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/circuit_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/stepfinal_checkpoint" \
                         --save_plots \
                         --reduce_method pca \
                         --pca_scope global \
@@ -112,7 +112,7 @@ process_model() {
                         --id_train_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/id_train_dedup.json" \
                         --id_test_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/id_test_low_cutoff_dedup.json" \
                         --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/ood_dedup.json" \
-                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/stepfinal_checkpoint/low_cutoff" \
+                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/circuit_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/stepfinal_checkpoint/low_cutoff" \
                         --save_plots \
                         --reduce_method pca \
                         --pca_scope global \
@@ -122,7 +122,7 @@ process_model() {
                         --id_train_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/id_train_dedup.json" \
                         --id_test_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/id_test_high_cutoff_dedup.json" \
                         --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/ood_dedup.json" \
-                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/stepfinal_checkpoint/high_cutoff" \
+                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/circuit_analysis/results/2-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/stepfinal_checkpoint/high_cutoff" \
                         --save_plots \
                         --reduce_method pca \
                         --pca_scope global \

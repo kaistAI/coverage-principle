@@ -36,7 +36,7 @@ process_model() {
     echo "Steps to analyze: $(get_steps "$MODEL_DIR" "$CONFIG_FILE")"
     echo "Include final checkpoint: $(get_include_final "$MODEL_DIR" "$CONFIG_FILE")"
     
-    DEDUP_DIR="/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/3-hop/${MODE}/${SHORT_MODEL_DIR}"
+    DEDUP_DIR="/mnt/nas/jinho/GrokkedTransformer/circuit_analysis/3-hop/${MODE}/${SHORT_MODEL_DIR}"
     DATASET="${SHORT_MODEL_DIR}"
     
     for POS in 0 1 2 3
@@ -56,7 +56,7 @@ process_model() {
                         --id_train_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/id_train_dedup.json" \
                         --id_test_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/id_test_dedup.json" \
                         --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/${STEP}/ood_dedup.json" \
-                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/3-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/step${STEP}" &
+                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/circuit_analysis/results/3-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/step${STEP}" &
                 done
 
                 if [ "$(get_include_final "$MODEL_DIR" "$CONFIG_FILE")" = "true" ]; then
@@ -69,7 +69,7 @@ process_model() {
                         --id_train_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/id_train_dedup.json" \
                         --id_test_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/id_test_dedup.json" \
                         --ood_file "${DEDUP_DIR}/f${ATOMIC_IDX}/(${LAYER},${POS})/final_checkpoint/ood_dedup.json" \
-                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/results/3-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/stepfinal_checkpoint" &
+                        --output_dir "/mnt/nas/jinho/GrokkedTransformer/circuit_analysis/results/3-hop/${MODE}/${DATASET}/f${ATOMIC_IDX}/(${LAYER},${POS})/stepfinal_checkpoint" &
                 fi
                 wait
             done

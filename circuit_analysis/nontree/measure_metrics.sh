@@ -16,5 +16,5 @@ do
         --pca_vis \
         --reduce_dim 2 \
         --pca_scope global \
-        --reduce_method pca
+        --reduce_method tsne
 done

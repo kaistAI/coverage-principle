@@ -40,7 +40,7 @@ process_model() {
                         --ckpt ${CHECKPOINT_DIR}/ \
                         --data_dir /mnt/sda/hoyeon/GrokkedTransformer \
                         --layer_pos_pairs "[(${LAYER},${POS})]" \
-                        --save_dir /mnt/nas/jinho/GrokkedTransformer/collapse_analysis/3-hop/ \
+                        --save_dir /mnt/nas/jinho/GrokkedTransformer/circuit_analysis/3-hop/ \
                         --atomic_idx ${ATOMIC_IDX} \
                         --mode ${MODE} &
                 done
@@ -51,7 +51,7 @@ process_model() {
                         --ckpt ${CHECKPOINT_DIR}/ \
                         --data_dir /mnt/sda/hoyeon/GrokkedTransformer \
                         --layer_pos_pairs "[(${LAYER},${POS})]" \
-                        --save_dir /mnt/nas/jinho/GrokkedTransformer/collapse_analysis/3-hop/ \
+                        --save_dir /mnt/nas/jinho/GrokkedTransformer/circuit_analysis/3-hop/ \
                         --atomic_idx ${ATOMIC_IDX} \
                         --mode ${MODE} &
                 fi
