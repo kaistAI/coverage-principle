@@ -1,27 +1,26 @@
-## The Coverage Principle: A Framework for Understanding Compositional Generalization
+```markdown
+# The Coverage Principle: A Framework for Understanding Compositional Generalization
 
->We study whether transformers can learn to implicitly reason over parametric knowledge, a skill that even the most capable language models struggle with. Focusing on two representative reasoning types, composition and comparison, we consistently find that transformers can learn implicit reasoning, but only through grokking, i.e., extended training far beyond overfitting. The levels of generalization also vary across reasoning types: when faced with out-of-distribution examples, transformers fail to systematically generalize for composition but succeed for comparison. We delve into the model's internals throughout training, conducting analytical experiments that reveal: 1) the mechanism behind grokking, such as the formation of the generalizing circuit and its relation to the relative efficiency of generalizing and memorizing circuits, and 2) the connection between systematicity and the configuration of the generalizing circuit. Our findings guide data and training setup to better induce implicit reasoning and suggest potential improvements to the transformer architecture, such as encouraging cross-layer knowledge sharing. Furthermore, we demonstrate that for a challenging reasoning task with a large search space, GPT-4-Turbo and Gemini-1.5-Pro based on non-parametric memory fail badly regardless of prompting styles or retrieval augmentation, while a fully grokked transformer can achieve near-perfect accuracy, showcasing the power of parametric memory for complex reasoning.
+This repository contains code for **“The Coverage Principle: A Framework for Understanding Compositional Generalization.”**
 
+## Abstract
 
-### File Structure
-```
-GrokkedTranformer/
-├─  {composition/comparison/complex_reasoning}.ipynb: scripts for training/evaluation data generation
-├─  data/: cached training/evaluation data
-├─  main.py: main script for model training
-├─  eval_qa.py: evaluation script for trained model
-├─  causal_tracing_{composition/comparison}.py: causal tracing & logit lens
-├─  LLM/: cached testing data & model outputs for LLMs based on non-parametric memory
-    ├─ {prompt/retrieval}_{directna/cot}_*.txt: input for the setting {without/with} retrieval augmentation and {without/with} CoT
-    ├─ answer_*.txt: ground truth answer
-    ├─ {gemini/gpt4turbo}_*.txt: predictions of Gemini-Pro-1.5 and GPT-4-Turbo
-├─  LLM.ipynb: evaluation script and cached evaluation results for LLMs
-└── utils.py: other helper functions
+Large language models excel at pattern matching, yet often fall short in systematic compositional generalization. We propose the coverage principle: a data-centric framework showing that models relying primarily on pattern matching for compositional tasks cannot reliably generalize beyond substituting fragments that yield identical results when used in the same contexts. We demonstrate that this framework has a strong predictive power for the generalization capabilities of Transformers. First, we derive and empirically confirm that the training data required for two-hop generalization grows at least quadratically with the token set size, and the training data efficiency does not improve with 20x parameter scaling. Second, for compositional tasks with path ambiguity where one variable affects the output through multiple computational paths, we show that Transformers learn context-dependent state representations that undermine both performance and interpretability. Third, Chain-of-Thought supervision improves training data efficiency for multi-hop tasks but still struggles with path ambiguity. Overall, the coverage principle provides a unified lens for understanding compositional reasoning, and underscores the need for fundamental architectural or training innovations to achieve truly systematic compositionality.
+
+## File Structure
 ```
 
-### Environmental Setup
+coverage-principle/
+├── dataset\_generation/: scripts for training/evaluation data generation
+├── data/: cached training/evaluation data
+├── main.py: main script for model training
+├── determine\_coverage.py: coverage determination algorithm
+└── circuit\_analysis/: cosine similarity and causal tracing analysis
+
+````
+
+## Environmental Setup
 ```bash
-
 conda create -n coverage-principle python=3.10
 conda activate coverage-principle
 
@@ -34,63 +33,120 @@ cd ..
 cd simpletransformers
 pip install -e .
 cd ..
-```
+````
 
-### Data Preparation
-- Download from [link](https://buckeyemailosu-my.sharepoint.com/:f:/g/personal/wang_13930_buckeyemail_osu_edu/EghpRAb3V71FnQsi44nuAfsB47HZSmmWuxt5DML2hqtM7w?e=TWeYkW) and unzip into data/, or alternatively, run ```{composition/comparison/complex_reasoning}.ipynb``` to generate the data
-- Download from [link](https://buckeyemailosu-my.sharepoint.com/:f:/g/personal/wang_13930_buckeyemail_osu_edu/EiTbt6SLSLhLrJd_kgJJBtIBPerEzHziFVsmn98pP8sSZQ?e=KUaI0d) and unzip into LLM/
+## Data Preparation
 
-### Model Training
+### Generate Synthetic Dataset
+
+Use the dataset-generation scripts to create synthetic compositional tasks. For example, to generate a 2-hop compositional dataset:
+
 ```bash
-MODEL_PATH=gpt2
-
-DATASET=data/$1/
-WEIGHT_DECAY=$2
-N_LAYERS=$3
-GPU=$4
-
-OUTPUT_DIR=<your_dir>/$1_$2_$3
-
-CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node=4 --master_port 12345 main.py \
-# CUDA_VISIBLE_DEVICES=$GPU python main.py \
---data_dir $DATASET \
---model_name_or_path ${MODEL_PATH} \
---weight_decay $WEIGHT_DECAY \
---output_dir $OUTPUT_DIR \
---max_seq_length 10 \
---max_length 10 \
---block_size 10 \
---train_batch_size 512 \
---eval_batch_size 512 \
---learning_rate 1e-4 \
---gradient_accumulation_steps 1 \
---save_step 50000 \
---save_step_dense 40000 \
---max_steps 1500000 \
---do_train \
---scheduler constant_schedule_with_warmup \
---fp16 \
---evaluate_during_training \
---predict_during_training \
---init_weights \
---add_tokens \
---n_layer $N_LAYERS
+cd dataset_generation
+python twohop.py --num_tokens 50 --max_train_data_num 10000 --default_seen_ratio 0.7 --test_size_for_type 2000 --seed 42
 ```
 
+**Key arguments**
 
-### Logit lens & Causal tracing
+| Argument               | Description                                           |
+| ---------------------- | ----------------------------------------------------- |
+| `--num_tokens`         | Size of the token vocabulary                          |
+| `--max_train_data_num` | Maximum number of training examples                   |
+| `--default_seen_ratio` | Fraction of each function’s domain marked as **seen** |
+| `--test_size_for_type` | Number of test samples for each coverage type         |
+| `--cot`                | Enable Chain-of-Thought supervision                   |
+
+This creates a dataset in `data/twohop.50.10000.diff-f12.inf/` containing:
+
+* `train.json` – training data
+* `test.json` – test data with coverage-type annotations
+* `atomic_facts_f1.json`, `atomic_facts_f2.json` – primitive-function mappings
+* `vocab.json` – vocabulary tokens
+
+## Coverage Determination
+
+To analyze which test examples fall within the coverage of your training data:
+
 ```bash
-python causal_tracing_{comparison/composition}.py \
-    --dataset <dataset_name> \
-    --model_dir <your_dir> \
-    --save_path <your_save_path> \
-    --num_layer <number_layer_of_model> \
-    --wd <weight_decay_used>
+python determine_coverage.py --data_dir data/twohop.50.10000.diff-f12.inf/ --min_evidence 1 --k_sweep
 ```
-#### example
-```bash
-# example
-python causal_tracing_{comparison/composition}.py --dataset composition.2000.200.9.0 --model_dir <dir_path> --save_path <save_dir_path> --num_layer 8 --wd 0.1
-```
-- this will load <dir_path>/{comparison/composition}.2000.200.9.0_0.1_8 model checkpoints, and save the all checkpoints result in <save_dir_path>/{comparison/composition}-2000.200.9.0_0.1_8.json file
 
+**Key arguments**
+
+| Argument         | Description                                               |
+| ---------------- | --------------------------------------------------------- |
+| `--data_dir`     | Path to dataset directory                                 |
+| `--min_evidence` | Minimum evidence threshold *k* for functional equivalence |
+| `--k_sweep`      | Run analysis for multiple *k* values                      |
+| `--visualise`    | Generate graph visualization of coverage                  |
+| `--ground_truth` | Use ground-truth functional equivalence (f1 only)         |
+
+Outputs include:
+
+* `k_sweep_results/` – coverage analysis results for different *k* values
+* `test_annotated.json` – test data with coverage annotations
+* Coverage visualization (if `--visualise` is used)
+
+## Model Training
+
+Train a GPT-2 model on the generated dataset:
+
+```bash
+bash script/train.sh twohop.50.10000.diff-f12.inf 0.1 8 12 0 42
+```
+
+**Script arguments**
+
+1. Dataset name (e.g., `twohop.50.10000.diff-f12.inf`)
+2. Weight decay (e.g., `0.1`)
+3. Number of layers (e.g., `8`)
+4. Number of attention heads (e.g., `12`)
+5. GPU ID (e.g., `0`)
+6. Random seed (e.g., `42`)
+
+**Training configuration**
+
+* Architecture: GPT-2 with specified layers/heads
+* Learning rate: `1e-4`
+* Batch size: `4096`
+* Max steps: `62500`
+* Distributed training on 4 GPUs
+
+Trained models are saved in `CKPT_DIR/trained_checkpoints/`.
+
+## Analysis
+
+### Cosine Similarity Analysis
+
+Analyze how models form clustered representations of functionally equivalent components:
+
+```bash
+cd circuit_analysis/hierarchical/2-hop
+python collapse_analysis_2-hop.py \
+    --ckpt CKPT_DIR/trained_checkpoints/twohop.50.10000.diff-f12.inf_wd-0.1_layer-8_head-12_seed-42/final_checkpoint \
+    --layer_pos_pairs "[(3,1)]" \
+    --save_dir ./results/cosine_analysis \
+    --atomic_idx 1 \
+    --mode residual
+```
+
+### Causal Tracing Analysis
+
+Identify which representations are causally important:
+
+```bash
+cd circuit_analysis/hierarchical/2-hop
+python causal_tracing_2-hop.py \
+    --model_dir CKPT_DIR/trained_checkpoints/twohop.50.10000.diff-f12.inf_wd-0.1_layer-8_head-12_seed-42 \
+    --step_list final_checkpoint \
+    --data_dir ./data_fixed \
+    --batch_size 1024 \
+    --metric_type rank
+```
+
+## License
+
+This project is licensed under the MIT License.
+
+```
+```
