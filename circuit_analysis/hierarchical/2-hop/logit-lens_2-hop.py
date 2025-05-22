@@ -15,8 +15,8 @@ def setup_logging(debug_mode):
 
 def parse_tokens(text):
     """
-    주어진 문자열을 "<"와 ">"를 기준으로 분리하여 토큰 리스트를 생성합니다.
-    예: "<t_5><t_23><t_17><t_42></a>" -> ["t_5", "t_23", "t_17", "t_42"]
+    Separates the given string based on '<' and '>' to generate a token list.
+    Example: "<t_5><t_23><t_17><t_42></a>" -> ["t_5", "t_23", "t_17", "t_42"]
     """
     tokens = text.replace("</a>", "").strip("><").split("><")
     return tokens
@@ -41,7 +41,7 @@ def parse_atomic_fact(atomic_facts_f1, atomic_facts_f2):
 
 def group_by_target(data, f1_dict = None):
     """
-    data: train.json (또는 test.json)의 entry 리스트. 각 entry는 "input_text"와 "target_text"를 가짐.
+    data: train.json (or test.json) entry list. Each entry has "input_text" and "target_text".
     f1_dict : (inp_token1, inp_token2) -> out_token
     """
     grouped = {}
@@ -94,11 +94,11 @@ def load_and_preprocess_data(f1_dict, test_data):
 
 def deduplicate_grouped_data(grouped_data):
     """
-    grouped_data: 그룹핑된 데이터. 형식은 { group_key: [entry, entry, ...] }이며,
-                  각 entry는 "input_text"와 "target_text"를 포함하는 dict입니다.
+    grouped_data: Grouped data. Format is { group_key: [entry, entry, ...] },
+                  where each entry is a dict containing "input_text" and "target_text".
 
     Returns:
-        중복 제거된 entry들의 리스트. 동일한 deduplication 키를 가진 entry들은 하나만 남게 됩니다.
+        Deduplicated list of entries. Only one entry remains for entries with the same deduplication key.
     """
     output = {}
     for group_key, entries in grouped_data.items():
@@ -139,7 +139,7 @@ def logit_lens(data, model, tokenizer, device, batch_size):
     all_original_inputs = []
     all_bridge_entities = []
     
-    # 1. 모든 입력과 bridge entity를 리스트에 저장
+    # 1. Store all inputs and bridge entities in lists
     for bridge_entity, entries in data.items():
         for entry in entries:
             all_original_inputs.append(entry['input_text'])
@@ -148,14 +148,14 @@ def logit_lens(data, model, tokenizer, device, batch_size):
     results = {}
     
     num_samples = len(all_original_inputs)
-    # 2. 배치 단위로 처리
+    # 2. Process in batches
     for start in range(0, num_samples, batch_size):
         end = start + batch_size
         batch_inputs = all_original_inputs[start:end]
         batch_bridges = all_bridge_entities[start:end]
         temp_dict = dict()
 
-        # 토크나이징
+        # Tokenization
         tokenizer_output = tokenizer(batch_inputs, return_tensors="pt", padding=True)
         input_ids = tokenizer_output["input_ids"].to(device)
         attention_mask = tokenizer_output["attention_mask"].to(device)
@@ -166,11 +166,11 @@ def logit_lens(data, model, tokenizer, device, batch_size):
                 output_hidden_states=True
             )
         
-        # 모든 hidden states 가져오기
+        # Get all hidden states
         all_hidden_states = outputs['hidden_states']
         word_embedding = model.lm_head.weight.data
         
-        # 4. 각 레이어와 위치에 대해 logit lens 적용
+        # 4. Apply logit lens for each layer and position
         for layer_idx in range(1, len(all_hidden_states)):
             hidden_states = all_hidden_states[layer_idx]
             with torch.no_grad():
@@ -178,7 +178,7 @@ def logit_lens(data, model, tokenizer, device, batch_size):
                 
             b_logit_lens = return_rank(temp, word_embedding, tokenizer([f"<{bridge}>" for bridge in batch_bridges])["input_ids"])
             
-            # 각 위치별로 결과 저장
+            # Store results for each position
             for pos in range(b_logit_lens.size(1)):
                 if f"layer_{layer_idx}" not in temp_dict:
                     temp_dict[f"layer_{layer_idx}"] = {}
@@ -186,7 +186,7 @@ def logit_lens(data, model, tokenizer, device, batch_size):
                     temp_dict[f"layer_{layer_idx}"][pos] = []
                 temp_dict[f"layer_{layer_idx}"][pos].extend(b_logit_lens[:, pos].tolist())
         
-        # 배치 결과를 최종 결과에 합치기
+        # Merge batch results into final results
         for layer_idx in temp_dict:
             if layer_idx not in results:
                 results[layer_idx] = {}
@@ -210,7 +210,7 @@ def main():
     parser.add_argument("--batch_size", type=int, default=4096)
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument("--metric_type", type=str, choices=["rank", "prob"], default="rank",
-                         help="측정 방식: rank 또는 probability")
+                         help="Measurement method: rank or probability")
 
     args = parser.parse_args()
     setup_logging(args.debug)
@@ -230,13 +230,13 @@ def main():
     logging.debug(f"data_dir: {data_dir}")
     logging.debug(f"dataset: {dataset}")
     
-    # atomic facts 불러오기
+    # Load atomic facts
     with open(os.path.join(data_dir, "data", dataset, "atomic_facts_f1.json"), "r") as f:
         atomic_facts_f1 = json.load(f)
     with open(os.path.join(data_dir, "data", dataset, "atomic_facts_f2.json"), "r") as f:
         atomic_facts_f2 = json.load(f)
 
-    # 데이터 전처리
+    # Data preprocessing
     # (inp_token1, inp_token2) -> out_token
     f1_dict, f2_dict = parse_atomic_fact(atomic_facts_f1, atomic_facts_f2)
     
@@ -297,12 +297,12 @@ def main():
         results[checkpoint] = result_ckpt
         
     save_file_name = f"{args.model_dir.split('/')[-1]}"
-    out_dir = os.path.join(base_dir, "collapse_analysis", "logit-lens_results", "2-hop")
+    out_dir = os.path.join(base_dir, "circuit_analysis", "logit-lens_results", "2-hop")
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, f"{save_file_name}.json"), "w", encoding='utf-8') as f:
         json.dump(results, f, indent=4)
         
-    # 각 데이터 타입, 레이어, 위치별 평균값 계산
+    # Calculate average values for each data type, layer, and position
     avg_results = {}
     for checkpoint in results:
         avg_results[checkpoint] = {}
@@ -314,7 +314,7 @@ def main():
                     values = results[checkpoint][data_type][layer][pos]
                     avg_results[checkpoint][data_type][layer][pos] = sum(values) / len(values)
 
-    # 평균값 결과 저장
+    # Save averaged results
     avg_save_path = os.path.join(out_dir, f"{save_file_name}_refined.json")
     with open(avg_save_path, "w", encoding='utf-8') as f:
         json.dump(avg_results, f, indent=4)

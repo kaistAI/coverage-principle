@@ -31,8 +31,8 @@ def return_rank(hd, word_embedding_, token_ids_list, metric='dot'):
 
 def parse_tokens(text):
     """
-    주어진 문자열을 "<"와 ">"를 기준으로 분리하여 토큰 리스트를 생성합니다.
-    예: "<t_5><t_23><t_17><t_42></a>" -> ["t_5", "t_23", "t_17", "t_42"]
+    Separates the given string based on '<' and '>' to generate a token list.
+    Example: "<t_5><t_23><t_17><t_42></a>" -> ["t_5", "t_23", "t_17", "t_42"]
     """
     tokens = text.replace("</a>", "").strip("><").split("><")
     return tokens
@@ -74,7 +74,7 @@ def build_seen_atomic_dicts(f1_dict, f2_dict, train_data):
 
 def group_by_target(data, f1_dict):
     """
-    data: train.json (또는 test.json)의 entry 리스트. 각 entry는 "input_text"와 "target_text"를 가짐.
+    data: train.json (or test.json) entry list. Each entry has "input_text" and "target_text".
     f1_dict : (inp_token1, inp_token2) -> out_token
     """
     grouped = {}
@@ -89,11 +89,11 @@ def group_by_target(data, f1_dict):
 
 def deduplicate_grouped_data(grouped_data):
     """
-    grouped_data: 그룹핑된 데이터. 형식은 { group_key: [entry, entry, ...] }이며,
-                  각 entry는 "input_text"와 "target_text"를 포함하는 dict입니다.
+    grouped_data: Grouped data. Format is { group_key: [entry, entry, ...] },
+                  where each entry is a dict containing "input_text" and "target_text".
 
     Returns:
-        중복 제거된 entry들의 리스트. 동일한 deduplication 키를 가진 entry들은 하나만 남게 됩니다.
+        Deduplicated list of entries. Only one entry remains for entries with the same deduplication key.
     """
     output = {}
     for group_key, entries in grouped_data.items():
@@ -120,8 +120,8 @@ def intervene_and_measure(original_data,
     original_data: { bridge_entity: [entry, ...], ... }
     model: Trained Decoder-only Transformer
     tokenizer: Tokenizer
-    device: 실행 디바이스 (예: "cuda:0")
-    batch_size: 미니배치 크기
+    device: Execution device (e.g., "cuda:0")
+    batch_size: Mini-batch size
     """
     results = []
     skipped_data = 0
@@ -131,7 +131,7 @@ def intervene_and_measure(original_data,
     all_changed_t = []
     all_query = []
 
-    # 각 entry의 target_text는 [t1, t2, t3, b1, t] 형태라고 가정
+    # Each entry's target_text is assumed to be in the form [t1, t2, t3, b1, t]
     for bridge_entity, entries in original_data.items():
         for entry in entries:
             original_input = entry['input_text']
@@ -140,12 +140,12 @@ def intervene_and_measure(original_data,
             t1, t2, t3, b1, t = tokens
             assert b1 == bridge_entity
 
-            # 후보 query 및 변경된 t 생성 (첫 번째 relation perturb)
+            # Generate candidate query and changed t (first relation perturb)
             candidate_set = set()
             for b1_candidate in seen_b1_to_t1t2.keys():
                 if b1_candidate == bridge_entity:
                     continue
-                # f2 mapping: (b1_candidate, t3) -> t가 있어야 함
+                # f2 mapping: (b1_candidate, t3) -> t must exist
                 if (b1_candidate, t3) not in seen_f2_dict:
                     continue
                 candidate_t = seen_f2_dict[(b1_candidate, t3)]
@@ -161,10 +161,10 @@ def intervene_and_measure(original_data,
                 continue
             candidate_list = sorted(list(candidate_hr_set))
             selected_candidate = candidate_list[np.random.randint(0, len(candidate_list))]
-            # query_text는 f1의 입력: "<t1><t2>"
+            # query_text is f1 input: "<t1><t2>"
             query_text = ''.join([f"<{token}>" for token in selected_candidate[:2]])
             changed_t = selected_candidate[-1]
-            injection_pos = 1  # intervention 시, 두 번째 토큰 위치 교체
+            injection_pos = 1  # During intervention, replace the second token position
 
             all_original_inputs.append(original_input)
             all_real_t.append(t)
@@ -184,7 +184,7 @@ def intervene_and_measure(original_data,
         current_changed_t = all_changed_t[start:end]
         current_query = all_query[start:end]
 
-        # 1. 원본 입력에 대한 모델 forward
+        # 1. Model forward for original input
         tokenizer_output = tokenizer(current_original_inputs, return_tensors="pt", padding=True)
         input_ids = tokenizer_output["input_ids"].to(device)
         attention_mask = tokenizer_output["attention_mask"].to(device)
@@ -197,7 +197,7 @@ def intervene_and_measure(original_data,
         original_hidden_states = outputs['hidden_states']
         word_embedding = model.lm_head.weight.data
 
-        # target token 처리 (실제 target, 변경된 target)
+        # Target token processing (actual target, changed target)
         tokenized_real_t = tokenizer([f"<{t}>" for t in current_real_t], return_tensors="pt", padding=True)
         tokenized_changed_t = tokenizer([f"<{t}>" for t in current_changed_t], return_tensors="pt", padding=True)
         input_ids_real = tokenized_real_t["input_ids"]
@@ -206,11 +206,11 @@ def intervene_and_measure(original_data,
         rank_before_real = return_rank(original_hidden_states[-1], word_embedding, input_ids_real)[:, -1].tolist()
         rank_before_changed = return_rank(original_hidden_states[-1], word_embedding, input_ids_changed)[:, -1].tolist()
 
-        # 불필요한 메모리 해제
+        # Free unnecessary memory
         del outputs
         torch.cuda.empty_cache()
 
-        # 2. query 입력에 대해 모델 forward (intervention용)
+        # 2. Model forward for query input (for intervention)
         tokenizer_output_query = tokenizer(current_query, return_tensors="pt", padding=True)
         input_ids_query = tokenizer_output_query["input_ids"].to(device)
         attention_mask_query = tokenizer_output_query["attention_mask"].to(device)
@@ -222,11 +222,11 @@ def intervene_and_measure(original_data,
             )
         query_hidden_states = outputs_query['hidden_states']
 
-        # 불필요한 메모리 해제
+        # Free unnecessary memory
         del outputs_query
         torch.cuda.empty_cache()
 
-        # 3. intervention: injection할 토큰 위치는 injection_pos (atomic_idx별로 다름)
+        # 3. intervention: token position to inject is injection_pos (varies by atomic_idx)
         intervened_ranks_real = {}
         intervened_ranks_changed = {}
         for layer_to_intervene in range(1, 8):
@@ -245,7 +245,7 @@ def intervene_and_measure(original_data,
                 intervened_hidden = f_layer.ln_2(intervened_hidden)
                 feed_forward_hidden = f_layer.mlp.c_proj(f_layer.mlp.act(f_layer.mlp.c_fc(intervened_hidden)))
                 intervened_hidden = residual + feed_forward_hidden
-            # 최종 layer norm
+            # Final layer norm
             intervened_hidden = model.transformer.ln_f(intervened_hidden)
 
             rank_after_real = return_rank(intervened_hidden, word_embedding, input_ids_real)[:, -1].tolist()
@@ -254,11 +254,11 @@ def intervene_and_measure(original_data,
             intervened_ranks_real[layer_to_intervene] = rank_after_real
             intervened_ranks_changed[layer_to_intervene] = rank_after_changed
 
-            # 불필요한 메모리 해제
+            # Free unnecessary memory
             del intervened_hidden
             torch.cuda.empty_cache()
 
-        # 4. 미니배치 내 각 샘플별 결과 dict 생성 및 결과 리스트에 저장
+        # 4. Generate result dict for each sample in mini-batch and save to results list
         for i in range(len(current_original_inputs)):
             result_dict = {}
             result_dict["rank_before_real_t"] = rank_before_real[i]
@@ -268,7 +268,7 @@ def intervene_and_measure(original_data,
                 result_dict[f"rank_after_{layer}_changed_t"] = intervened_ranks_changed[layer][i]
             results.append(result_dict)
 
-        # 불필요한 메모리 해제
+        # Free unnecessary memory
         del query_hidden_states
         torch.cuda.empty_cache()
 
@@ -301,7 +301,7 @@ def main():
     else:
         dataset = args.model_dir.split("/")[-1].split("_")[0]
 
-    # atomic facts 불러오기
+    # Load atomic facts
     with open(os.path.join(base_dir, "data", dataset, "atomic_facts_f1.json"), "r") as f:
         atomic_facts_f1 = json.load(f)
     with open(os.path.join(base_dir, "data", dataset, "atomic_facts_f2.json"), "r") as f:
@@ -326,7 +326,6 @@ def main():
         test_data = json.load(f)
     
     test_id_data = [entry for entry in test_data if entry.get("type") == "type_0"]
-    # test_ood_data = [entry for entry in test_data if entry.get("type") != "type_0"]
 
     original_train = group_by_target(train_data, f1_dict=f1_dict)
     original_test_id  = group_by_target(test_id_data, f1_dict=f1_dict)
@@ -384,12 +383,12 @@ def main():
         results[checkpoint] = result_ckpt
     
     save_file_name = f"{args.model_dir.split('/')[-1]}_residual_diff_f1"
-    out_dir = os.path.join(base_dir, "collapse_analysis", "tracing_results", "2-hop")
+    out_dir = os.path.join(base_dir, "circuit_analysis", "tracing_results", "2-hop")
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, f"{save_file_name}.json"), "w", encoding='utf-8') as f:
         json.dump(results, f, indent=4)
     
-    # 후처리: 각 checkpoint별 intervention 전후 변화 요약
+    # Post-processing: Summarize intervention before/after changes for each checkpoint
     logging.info(f"Summarizing Intervention Exp. result...")
     refined_results = {}
     all_ckpts = list(results.keys())
@@ -407,7 +406,7 @@ def main():
                 result_4_type[f"both_layer{i}"] = 0
             
             for entry in entries:
-                # 애초부터 실제 t가 changed t보다 낮은 경우는 제외 (intervene 방식의 의미가 없음)
+                # Exclude cases where the actual t is originally lower than changed t (intervention method is meaningless)
                 if entry["rank_before_real_t"] > entry["rank_before_changed_t"]:
                     continue
                 sample_num += 1

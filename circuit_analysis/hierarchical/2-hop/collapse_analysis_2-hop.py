@@ -1,5 +1,5 @@
 """
-This script analyzes the collapse behavior of a transformer model in 2-hop hierarchical task.
+This script analyzes the circuit behavior of a transformer model in 2-hop hierarchical task.
 It processes test data, extracts hidden states, and analyzes model behavior across different data groups.
 """
 
@@ -319,79 +319,6 @@ def process_data_group(model, data_group, layer_pos_pairs, tokenizer, device, mo
     return results
 
 
-# def deduplicate_vectors(results):
-#     """
-#     Deduplicate vectors within each target group and track removal statistics.
-    
-#     Args:
-#         results (dict): Dictionary containing results grouped by targets
-        
-#     Returns:
-#         tuple: (deduplicated_results, dedup_stats)
-#     """
-#     import numpy as np
-#     from collections import defaultdict
-
-#     dedup_stats = defaultdict(lambda: defaultdict(int))
-#     deduplicated_results = defaultdict(list)
-
-#     def vectors_equal(v1, v2):
-#         """Compare two vectors for equality with numerical tolerance."""
-#         if v1 is None or v2 is None:
-#             return v1 is None and v2 is None
-#         return np.allclose(np.array(v1), np.array(v2), rtol=1e-5, atol=1e-8)
-
-#     def get_vector_key(hidden_state):
-#         """Create a tuple of vectors from a hidden state."""
-#         vectors = []
-#         if 'embedding' in hidden_state:
-#             vectors.append(tuple(hidden_state['embedding']))
-#         if 'post_attention' in hidden_state and hidden_state['post_attention'] is not None:
-#             vectors.append(tuple(hidden_state['post_attention']))
-#         if 'post_mlp' in hidden_state and hidden_state['post_mlp'] is not None:
-#             vectors.append(tuple(hidden_state['post_mlp']))
-#         return tuple(vectors)
-
-#     for bridge_entity, instances in results.items():
-#         seen_vectors = defaultdict(set)  # (layer, position) -> set of vector tuples
-#         logging.info(f"Performing deduplication for target {bridge_entity}")
-
-#         for instance in tqdm(instances, desc=f"Processing target {bridge_entity}"):
-#             is_duplicate = False
-
-#             # Track duplicates for each hidden state
-#             for hidden_state in instance['hidden_states']:
-#                 layer = hidden_state['layer']
-#                 pos = hidden_state['position']
-#                 vector_key = get_vector_key(hidden_state)
-                
-#                 # Check if we've seen this vector before
-#                 is_vec_duplicate = False
-#                 for seen_vec in seen_vectors[(layer, pos)]:
-#                     # post_mlp, post_attention 모두 equal하다고 나와야함
-#                     if all(vectors_equal(v1, v2) for v1, v2 in zip(vector_key, seen_vec)):
-#                         is_vec_duplicate = True
-#                         dedup_stats[bridge_entity][f"layer{layer}_pos{pos}"] += 1
-#                         break
-#                 # 하나의 instance 당 여러 (layer, pos)에 대한 hidden representation을 저장하고 있을 경우, 하나만 동일해도 duplicate라고 인식
-#                 if is_vec_duplicate:
-#                     is_duplicate = True
-#                     break
-#                 else:
-#                     seen_vectors[(layer, pos)].add(vector_key)
-
-#             # If instance is not a duplicate, add it to deduplicated results
-#             if not is_duplicate:
-#                 deduplicated_results[bridge_entity].append(instance)
-
-#     # Convert defaultdict to regular dict with string keys
-#     final_stats = {}
-#     for bridge_entity, stats in dedup_stats.items():
-#         final_stats[bridge_entity] = dict(stats)
-
-#     return dict(deduplicated_results), final_stats
-
-
 def deduplicate_grouped_data(grouped_data, atomic_idx):
     """
     Remove duplicate entries from grouped data based on atomic function index.
@@ -452,7 +379,7 @@ def parse_layer_pos_pairs(layer_pos_str):
 
 
 def main():
-    """Main function to run the collapse analysis."""
+    """Main function to run the circuit analysis."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--ckpt", required=True, help="Path to the model checkpoint")
     parser.add_argument("--layer_pos_pairs", required=True, help="List of (layer, position) tuples to evaluate")
@@ -460,7 +387,7 @@ def main():
     parser.add_argument("--save_dir", required=True, help="Directory to save the analysis results")
     parser.add_argument("--device", type=str, default="cuda", help="Device to run the model on")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode for verbose output")
-    parser.add_argument("--atomic_idx", required=True, type=int, choices=[1,2,4], help="Atomic function index for collapse evaluation")
+    parser.add_argument("--atomic_idx", required=True, type=int, choices=[1,2,4], help="Atomic function index for circuit evaluation")
     parser.add_argument("--mode", required=True, choices=["post_mlp", "residual"], help="Mode: 'post_mlp' or 'residual'")
     parser.add_argument("--batch_size", type=int, default=4096, help="Batch size for processing")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing save directory if it exists")

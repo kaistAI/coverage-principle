@@ -52,17 +52,6 @@ def load_atomic_facts_3hop(f1_path, f2_path, f3_path):
 
 ###############################################################################
 def deduplicate_grouped_data(grouped_data, atomic_idx):
-    """
-    grouped_data: 그룹핑된 데이터. 형식은 { group_key: [entry, entry, ...] }이며,
-                  각 entry는 "input_text"와 "target_text"를 포함하는 dict입니다.
-    atomic_idx: deduplication 기준을 결정하는 인덱스
-                - 1이면, target_text의 처음 두 토큰(t1, t2) 기준 deduplication
-                - 2이면, 처음 세 토큰(t1, t2, t3) 기준 deduplication
-                - 3이면, 처음 네 토큰(t1, t2, t3, t4) 기준 deduplication
-
-    Returns:
-        중복 제거된 entry들의 리스트. 동일한 deduplication 키를 가진 entry들은 하나만 남게 됩니다.
-    """
     output = {}
     for group_key, entries in grouped_data.items():
         deduped = {}

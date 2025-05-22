@@ -301,90 +301,7 @@ def process_data_group(model, data_group, layer_pos_pairs, tokenizer, device, mo
     return results
 
 
-# def deduplicate_vectors(results):
-#     """
-#     Deduplicate vectors within each target group and track removal statistics.
-    
-#     Args:
-#         results (dict): Dictionary containing results grouped by targets
-        
-#     Returns:
-#         tuple: (deduplicated_results, dedup_stats)
-#     """
-#     import numpy as np
-#     from collections import defaultdict
-
-#     dedup_stats = defaultdict(lambda: defaultdict(int))
-#     deduplicated_results = defaultdict(list)
-
-#     def vectors_equal(v1, v2):
-#         """Compare two vectors for equality with numerical tolerance."""
-#         if v1 is None or v2 is None:
-#             return v1 is None and v2 is None
-#         return np.allclose(np.array(v1), np.array(v2), rtol=1e-5, atol=1e-8)
-
-#     def get_vector_key(hidden_state):
-#         """Create a tuple of vectors from a hidden state."""
-#         vectors = []
-#         if 'embedding' in hidden_state:
-#             vectors.append(tuple(hidden_state['embedding']))
-#         if 'post_attention' in hidden_state and hidden_state['post_attention'] is not None:
-#             vectors.append(tuple(hidden_state['post_attention']))
-#         if 'post_mlp' in hidden_state and hidden_state['post_mlp'] is not None:
-#             vectors.append(tuple(hidden_state['post_mlp']))
-#         return tuple(vectors)
-
-#     for target, instances in results.items():
-#         seen_vectors = defaultdict(set)  # (layer, position) -> set of vector tuples
-#         logging.info(f"Performing deduplication for target {target}")
-
-#         for instance in tqdm(instances, desc=f"Processing target {target}"):
-#             is_duplicate = False
-            
-#             # Track duplicates for each hidden state
-#             for hidden_state in instance['hidden_states']:
-#                 layer = hidden_state['layer']
-#                 pos = hidden_state['position']
-#                 vector_key = get_vector_key(hidden_state)
-                
-#                 # Check if we've seen this vector before
-#                 is_vec_duplicate = False
-#                 for seen_vec in seen_vectors[(layer, pos)]:
-#                     if all(vectors_equal(v1, v2) for v1, v2 in zip(vector_key, seen_vec)):
-#                         is_vec_duplicate = True
-#                         dedup_stats[target][f"layer{layer}_pos{pos}"] += 1
-#                         break
-                
-#                 if is_vec_duplicate:
-#                     is_duplicate = True
-#                     break
-#                 else:
-#                     seen_vectors[(layer, pos)].add(vector_key)
-
-#             # If instance is not a duplicate, add it to deduplicated results
-#             if not is_duplicate:
-#                 deduplicated_results[target].append(instance)
-    
-#     # Convert defaultdict to regular dict with string keys
-#     final_stats = {}
-#     for target, stats in dedup_stats.items():
-#         final_stats[target] = dict(stats)
-    
-#     return dict(deduplicated_results), final_stats
-
-
 def deduplicate_grouped_data(grouped_data, atomic_idx):
-    """
-    grouped_data: 그룹핑된 데이터. 형식은 { group_key: [entry, entry, ...] }이며,
-                  각 entry는 "input_text"와 "target_text"를 포함하는 dict입니다.
-    atomic_idx: deduplication 기준을 결정하는 인덱스
-                - 1이면, target_text의 처음 두 토큰(t1, t2) 기준 deduplication
-                - 2이면, 세 번째와 네 번째 토큰(t3, t4) 기준 deduplication
-                - 3이면, 처음 네 토큰(t1, t2, t3, t4) 기준 deduplication
-
-    Returns:
-        중복 제거된 entry들의 리스트. 동일한 deduplication 키를 가진 entry들은 하나만 남게 됩니다.
-    """
     output = {}
     for group_key, entries in grouped_data.items():
         deduped = {}
@@ -442,7 +359,7 @@ def main():
     parser.add_argument("--save_dir", required=True, help="Directory to save the analysis results")
     parser.add_argument("--device", type=str, default="cuda", help="Device to run the model on")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode for verbose output")
-    parser.add_argument("--atomic_idx", required=True, type=int, choices=[1,2,3], help="Bottleneck function index among f1, f2, and f3 used for collapse evaluation")
+    parser.add_argument("--atomic_idx", required=True, type=int, choices=[1,2,3], help="Bottleneck function index among f1, f2, and f3 used for circuit evaluation")
     parser.add_argument("--mode", required=True, choices=["post_mlp", "residual"], help="Mode: 'post_mlp' or 'residual'")
     parser.add_argument("--batch_size", type=int, default=4096, help="Batch size for processing")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing save directory if it exists")

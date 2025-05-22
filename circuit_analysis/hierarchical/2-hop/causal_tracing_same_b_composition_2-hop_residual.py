@@ -45,7 +45,6 @@ def intervene_and_measure(original_data, intervene_data, model, tokenizer, devic
          "gaussian": Gaussian random noise vector
          "query": random entity input
     """
-    # Todo : Data Batch processing
     results = []
     skipped_data = 0
     word_embedding = model.lm_head.weight.data
@@ -95,14 +94,6 @@ def intervene_and_measure(original_data, intervene_data, model, tokenizer, devic
                 else:
                     skipped_data += 1
                     continue
-                # if len(candidate_entries) == 0:
-                #     query_list[i] = None
-                #     if i in valid_q_indices:
-                #         valid_q_indices.remove(i)
-                # else:
-                #     selected = candidate_entries[np.random.randint(0, len(candidate_entries))]
-                #     q = ''.join([f"<{token}>" for token in selected["input_text"].strip("><").split("><")[:2]])
-                #     query_list[i] = q
             elif method == "query":
                 n1 = np.random.randint(0, 2000)
                 n2 = np.random.randint(0, 2000)
@@ -125,7 +116,6 @@ def intervene_and_measure(original_data, intervene_data, model, tokenizer, devic
         rank_before = return_rank(all_hidden_states[8], word_embedding, tokenizer([f"<{target}>" for target in filtered_real_t_list])["input_ids"])[:, -1].tolist()
         temp_dict['rank_before'] = rank_before
 
-        # batch_query_list = [query_list[i] for i in valid_q_indices]
         tokenizer_output = tokenizer(query_list, return_tensors="pt", padding=True)
         input_ids_, attention_mask_ = tokenizer_output["input_ids"].to(device), tokenizer_output["attention_mask"].to(device)
         with torch.no_grad():
@@ -181,7 +171,6 @@ def get_total_list_length(json_data):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_dir", required=True, help="Path to the model checkpoint")
-    # parser.add_argument("--layer_pos_pairs", required=True, help="List of (layer, position) tuples to evaluate")
     parser.add_argument("--step_list", default=None, nargs="+", help="checkpoint's steps to check causal strength")
     parser.add_argument("--device", default="cuda:0", help="Device to run the model on")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode for verbose output")
@@ -227,18 +216,17 @@ def main():
         model.config.pad_token_id = model.config.eos_token_id
         model.eval()
         
-        # Todo : use layer_pos_pairs parameter
         # Load already deduplicated hidden representation results file
-        with open(f"/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/{dataset}/(5,1)/{step}/id_train_dedup.json") as f:
+        with open(f"{base_dir}/circuit_analysis/{dataset}/(5,1)/{step}/id_train_dedup.json") as f:
             id_train_dedup = json.load(f)
         print(f"Total data number of id_train_dedup.json : {get_total_list_length(id_train_dedup)}")
-        with open(f"/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/{dataset}/(5,1)/{step}/id_test_dedup.json") as f:
+        with open(f"{base_dir}/circuit_analysis/{dataset}/(5,1)/{step}/id_test_dedup.json") as f:
             id_test_dedup = json.load(f)
         print(f"Total data number of id_test_dedup.json : {get_total_list_length(id_test_dedup)}")
-        with open(f"/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/{dataset}/(5,1)/{step}/ood_dedup.json") as f:
+        with open(f"{base_dir}/circuit_analysis/{dataset}/(5,1)/{step}/ood_dedup.json") as f:
             ood_dedup = json.load(f)
         print(f"Total data number of ood_dedup.json : {get_total_list_length(ood_dedup)}")
-        with open(f"/mnt/nas/jinho/GrokkedTransformer/collapse_analysis/{dataset}/(5,1)/{step}/nonsense_dedup.json") as f:
+        with open(f"{base_dir}/circuit_analysis/{dataset}/(5,1)/{step}/nonsense_dedup.json") as f:
             nonsense_dedup = json.load(f)
         print(f"Total data number of nonsense_dedup.json : {get_total_list_length(nonsense_dedup)}")
 
@@ -264,7 +252,7 @@ def main():
     
     # save results for each data
     save_file_name = f"{args.model_dir.split('/')[-1]}_residual_same"
-    with open(os.path.join(base_dir, "collapse_analysis", "tracing_results", f"{save_file_name}.json"), "w", encoding='utf-8') as f:
+    with open(os.path.join(base_dir, "circuit_analysis", "tracing_results", f"{save_file_name}.json"), "w", encoding='utf-8') as f:
         json.dump(results, f, indent=4)
 
     refined_results = {}
@@ -286,7 +274,7 @@ def main():
             results_4_ckpt[data_type] = result_4_type
         refined_results[checkpoint] = results_4_ckpt
 
-    with open(os.path.join(base_dir, "collapse_analysis", "tracing_results", f"{save_file_name}_refined.json"), "w", encoding='utf-8') as f:
+    with open(os.path.join(base_dir, "circuit_analysis", "tracing_results", f"{save_file_name}_refined.json"), "w", encoding='utf-8') as f:
         json.dump(refined_results, f, indent=4)
         
 if __name__=="__main__":

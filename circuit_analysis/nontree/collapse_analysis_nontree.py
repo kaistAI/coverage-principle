@@ -1,5 +1,5 @@
 """
-This script analyzes the collapse behavior of a transformer model in nontree DAG task.
+This script analyzes the circuit behavior of a transformer model in nontree DAG task.
 It processes test data, extracts hidden states, and analyzes model behavior across different data groups.
 """
 
@@ -358,66 +358,6 @@ def process_data_group(model, data_group, layer_pos_pairs, tokenizer, device, mo
     return results
 
 
-# def deduplicate_vectors(results):
-#     """
-#     Deduplicate vectors within each target group and track removal statistics.
-    
-#     Args:
-#         results (dict): Dictionary containing results grouped by targets
-        
-#     Returns:
-#         tuple: (deduplicated_results, dedup_stats)
-#     """
-#     import numpy as np
-#     from collections import defaultdict
-    
-#     dedup_stats = defaultdict(lambda: defaultdict(int))
-#     deduplicated_results = defaultdict(list)
-    
-#     def vectors_equal(v1, v2):
-#         """Check close equality of two arrays."""
-#         if v1 is None or v2 is None:
-#             return (v1 is None) and (v2 is None)
-#         return np.allclose(np.array(v1), np.array(v2), rtol=1e-5, atol=1e-8)
-    
-#     def get_vector_key(hidden_state):
-#         """Combine the relevant vectors into a single tuple key."""
-#         vectors = []
-#         if 'embedding' in hidden_state:
-#             vectors.append(tuple(hidden_state['embedding']))
-#         if 'post_attention' in hidden_state and hidden_state['post_attention'] is not None:
-#             vectors.append(tuple(hidden_state['post_attention']))
-#         if 'post_mlp' in hidden_state and hidden_state['post_mlp'] is not None:
-#             vectors.append(tuple(hidden_state['post_mlp']))
-#         return tuple(vectors)
-    
-#     for target, instances in results.items():
-#         seen_vectors = defaultdict(set)
-#         for instance in instances:
-#             is_duplicate = False
-#             for hidden_state in instance['hidden_states']:
-#                 layer = hidden_state['layer']
-#                 pos = hidden_state['position']
-#                 vector_key = get_vector_key(hidden_state)
-                
-#                 # check if we've seen this vector key
-#                 is_vec_dup = False
-#                 for seen_key in seen_vectors[(layer, pos)]:
-#                     if all(vectors_equal(a, b) for a, b in zip(vector_key, seen_key)):
-#                         is_vec_dup = True
-#                         dedup_stats[target][f"layer{layer}_pos{pos}"] += 1
-#                         break
-#                 if is_vec_dup:
-#                     is_duplicate = True
-#                     break
-#                 else:
-#                     seen_vectors[(layer, pos)].add(vector_key)
-
-#             if not is_duplicate:
-#                 deduplicated_results[target].append(instance)
-#     final_stats = {k: dict(v) for k,v in dedup_stats.items()}
-#     return dict(deduplicated_results), final_stats
-
 def deduplicate_grouped_data(grouped_data, atomic_idx):
     """
     Remove duplicate entries from grouped data based on atomic function index.
@@ -482,7 +422,7 @@ def parse_layer_pos_pairs(layer_pos_str):
 
 
 def main():
-    """Main function to run the collapse analysis."""
+    """Main function to run the circuit analysis."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--ckpt", required=True, help="Path to the model checkpoint")
     parser.add_argument("--layer_pos_pairs", required=True, help="List of (layer, position) tuples to evaluate")

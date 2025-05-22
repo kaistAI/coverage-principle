@@ -9,7 +9,7 @@ N_HEADS=$4
 GPU=$5
 SEED=$6
 
-OUTPUT_DIR=/mnt/nas/jinho/GrokkedTransformer/trained_checkpoints/$1_"wd"-$2_"layer"-$3_"head"-$4_"seed"-$6
+OUTPUT_DIR=CKPT_DIR/trained_checkpoints/$1_"wd"-$2_"layer"-$3_"head"-$4_"seed"-$6
 
 # CUDA_VISIBLE_DEVICES=$GPU python main.py \
 CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node=4 --master_port 12345 main.py \
@@ -38,6 +38,4 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node
 --max_seq_length 10 \
 --max_length 10 \
 --block_size 10 \
---wandb_project "GrokkedTransformer_reproduce" \
---wandb_entity "lklab_kaist" \
 --wandb_exp $1_"wd"$2_"layer"$3_"head"$4_"seed"$6

@@ -1,8 +1,6 @@
-## Grokked Transformers are Implicit Reasoners: A Mechanistic Journey to the Edge of Generalization (https://arxiv.org/abs/2405.15071)
+## The Coverage Principle: A Framework for Understanding Compositional Generalization
 
 >We study whether transformers can learn to implicitly reason over parametric knowledge, a skill that even the most capable language models struggle with. Focusing on two representative reasoning types, composition and comparison, we consistently find that transformers can learn implicit reasoning, but only through grokking, i.e., extended training far beyond overfitting. The levels of generalization also vary across reasoning types: when faced with out-of-distribution examples, transformers fail to systematically generalize for composition but succeed for comparison. We delve into the model's internals throughout training, conducting analytical experiments that reveal: 1) the mechanism behind grokking, such as the formation of the generalizing circuit and its relation to the relative efficiency of generalizing and memorizing circuits, and 2) the connection between systematicity and the configuration of the generalizing circuit. Our findings guide data and training setup to better induce implicit reasoning and suggest potential improvements to the transformer architecture, such as encouraging cross-layer knowledge sharing. Furthermore, we demonstrate that for a challenging reasoning task with a large search space, GPT-4-Turbo and Gemini-1.5-Pro based on non-parametric memory fail badly regardless of prompting styles or retrieval augmentation, while a fully grokked transformer can achieve near-perfect accuracy, showcasing the power of parametric memory for complex reasoning.
-
-<img width="750" alt="image" src="assets/1.png">
 
 
 ### File Structure
@@ -24,8 +22,8 @@ GrokkedTranformer/
 ### Environmental Setup
 ```bash
 
-conda create -n grokked_transformer python=3.10
-conda activate
+conda create -n coverage-principle python=3.10
+conda activate coverage-principle
 
 pip install torch==1.13.1+cu116 torchvision==0.14.1+cu116 torchaudio==0.13.1 --extra-index-url https://download.pytorch.org/whl/cu116
 
@@ -53,8 +51,8 @@ GPU=$4
 
 OUTPUT_DIR=<your_dir>/$1_$2_$3
 
-# CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node=4 --master_port 12345 main.py \
-CUDA_VISIBLE_DEVICES=$GPU python main.py \
+CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node=4 --master_port 12345 main.py \
+# CUDA_VISIBLE_DEVICES=$GPU python main.py \
 --data_dir $DATASET \
 --model_name_or_path ${MODEL_PATH} \
 --weight_decay $WEIGHT_DECAY \
@@ -79,17 +77,6 @@ CUDA_VISIBLE_DEVICES=$GPU python main.py \
 --n_layer $N_LAYERS
 ```
 
-- For the parameter sharing scheme in Section Appendix E.2, run the above command with ```--n_layer 4``` and ```--add_recurrence``` flag.
-
-- Pretrained model checkpoints could be downloaded from [here](https://buckeyemailosu-my.sharepoint.com/:f:/g/personal/wang_13930_buckeyemail_osu_edu/EtXABU00W65KvWZ4hqKaq6kB7cag7Gi5UUoXH5qMb9AdTg?e=o73sqm), where the directories are named by "<dataset_name>\_<weight_decay>\_<num_layers>" and contain downsampled checkpoints (full checkpoints are too large to upload) during training, labeled by "checkpoint-<training_step>/".
-
-### Evaluation
-```bash
-python eval_qa.py --dir <path_to_saved_checkpoints>
-```
-
-- For LLMs based on non-parametric memory, the cached evaluation scripts and results are included in ```LLM.ipynb```.
-
 
 ### Logit lens & Causal tracing
 ```bash
@@ -107,15 +94,3 @@ python causal_tracing_{comparison/composition}.py --dataset composition.2000.200
 ```
 - this will load <dir_path>/{comparison/composition}.2000.200.9.0_0.1_8 model checkpoints, and save the all checkpoints result in <save_dir_path>/{comparison/composition}-2000.200.9.0_0.1_8.json file
 
-### Citation
-```
-@misc{wang2024grokked,
-      title={Grokked Transformers are Implicit Reasoners: A Mechanistic Journey to the Edge of Generalization}, 
-      author={Boshi Wang and Xiang Yue and Yu Su and Huan Sun},
-      year={2024},
-      eprint={2405.15071},
-      archivePrefix={arXiv},
-      primaryClass={cs.CL},
-      url={https://arxiv.org/pdf/2405.15071}
-}
-```
