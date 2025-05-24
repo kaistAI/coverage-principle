@@ -1,6 +1,6 @@
 # The Coverage Principle: A Framework for Understanding Compositional Generalization
 
-This repository contains code for **“The Coverage Principle: A Framework for Understanding Compositional Generalization.”** The codes are built upon [this repository](https://github.com/OSU-NLP-Group/GrokkedTransformer)
+This repository contains code for **“The Coverage Principle: A Framework for Understanding Compositional Generalization.”** The codes are built upon the [GrokkedTransformer repository](https://github.com/OSU-NLP-Group/GrokkedTransformer).
 
 ## Abstract
 
